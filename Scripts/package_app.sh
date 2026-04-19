@@ -12,7 +12,7 @@ set -euo pipefail
 
 VERSION="${1:-0.1.0}"
 EMIT_ZIP="${2:-}"
-BUNDLE_ID="com.rntlqvnf.llimit"
+BUNDLE_ID="com.githajae.llimit"
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
