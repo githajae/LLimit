@@ -181,7 +181,6 @@ struct AnthropicUsageAPI: UsageAPI {
         req.timeoutInterval = 10
         let (data, resp) = try await URLSession.shared.data(for: req)
         let status = (resp as? HTTPURLResponse)?.statusCode ?? -1
-        let body = String(data: data, encoding: .utf8) ?? "<binary>"
         FileHandle.standardError.write(Data("[claude] claude.ai/api usage HTTP \(status)\n".utf8))
         if status == 401 || status == 403 {
             throw UsageAPIError.notLoggedIn
