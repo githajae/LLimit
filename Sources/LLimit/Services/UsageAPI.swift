@@ -45,7 +45,7 @@ struct AnthropicUsageAPI: UsageAPI {
         }
         let raw = await CLILoginRunner.runCapture(
             "claude", ["auth", "status"],
-            env: ["CLAUDE_CONFIG_DIR": account.configDir]
+            env: [:]
         )
         let status = (raw.data(using: .utf8)).flatMap {
             try? JSONDecoder().decode(Status.self, from: $0)
