@@ -8,6 +8,10 @@ accounts, without leaving the keyboard.
 > but reuses your existing `claude` / `codex` CLI logins instead of
 > requiring a separate sign-in flow.
 
+<p align="center">
+  <img src="Resources/screenshot.png" alt="LLimit usage popover" width="480">
+</p>
+
 ---
 
 ## Install
