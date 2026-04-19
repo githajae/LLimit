@@ -26,29 +26,7 @@ enum UsageAPIError: LocalizedError {
 ///     seven_day_opus: { ... } }
 struct AnthropicUsageAPI: UsageAPI {
     func fetch(account: Account) async throws -> UsageSnapshot {
-        let raw = await CLILoginRunner.runCapture(
-            "claude", ["auth", "status"],
-            env: ["CLAUDE_CONFIG_DIR": account.configDir]
-        )
-        struct Status: Decodable {
-            let loggedIn: Bool
-            let email: String?
-            let subscriptionType: String?
-            let orgName: String?
-            let authMethod: String?
-        }
-        guard let data = raw.data(using: .utf8),
-              let status = try? JSONDecoder().decode(Status.self, from: data) else {
-            throw UsageAPIError.parse(raw.prefix(80).description)
-        }
-        guard status.loggedIn else { throw UsageAPIError.notLoggedIn }
-
-        var bits: [String] = []
-        if let e = status.email { bits.append(e) }
-        if let s = status.subscriptionType { bits.append("\(s) plan") }
-
-        var windows: [UsageWindow] = []
-
+        // Try to load LLimit's own per-account credential first.
         let auth: AuthBundle?
         do {
             auth = try ClaudeAuthSource(accountId: account.id).load()
@@ -56,6 +34,29 @@ struct AnthropicUsageAPI: UsageAPI {
             FileHandle.standardError.write(Data("[claude] keychain read failed: \(error)\n".utf8))
             auth = nil
         }
+
+        // Fetch CLI status for email/plan metadata (best-effort).
+        struct Status: Decodable {
+            let loggedIn: Bool
+            let email: String?
+            let subscriptionType: String?
+            let orgName: String?
+            let authMethod: String?
+        }
+        let raw = await CLILoginRunner.runCapture(
+            "claude", ["auth", "status"],
+            env: ["CLAUDE_CONFIG_DIR": account.configDir]
+        )
+        let status = (raw.data(using: .utf8)).flatMap {
+            try? JSONDecoder().decode(Status.self, from: $0)
+        }
+
+        // Require at least one auth source: LLimit snapshot OR CLI login.
+        guard auth != nil || status?.loggedIn == true else {
+            throw UsageAPIError.notLoggedIn
+        }
+
+        var windows: [UsageWindow] = []
         var limitsResult: RateLimits? = nil
         if let auth {
             do {
@@ -98,10 +99,10 @@ struct AnthropicUsageAPI: UsageAPI {
         return UsageSnapshot(
             fetchedAt: Date(),
             windows: windows,
-            note: status.authMethod,
-            email: status.email,
-            planLabel: status.subscriptionType.map { "\($0) plan" },
-            organization: status.orgName
+            note: status?.authMethod,
+            email: status?.email,
+            planLabel: status?.subscriptionType.map { "\($0) plan" },
+            organization: status?.orgName
         )
     }
 

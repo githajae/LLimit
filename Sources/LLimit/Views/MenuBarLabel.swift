@@ -1,8 +1,14 @@
 import SwiftUI
+import AppKit
 
 /// The live status indicator in the system menu bar. Picks the most-loaded
 /// window across all accounts and renders two stacked bars (5h / 7d) plus
 /// an optional percent label.
+///
+/// On macOS 26, MenuBarExtra no longer renders complex SwiftUI view
+/// hierarchies (GeometryReader, ZStack, etc.) in its label. We work around
+/// this by rasterising the bars into an NSImage and displaying it via
+/// `Image(nsImage:)`.
 struct MenuBarLabel: View {
     @EnvironmentObject var store: AccountStore
     @EnvironmentObject var refresher: RefreshCoordinator
@@ -12,9 +18,11 @@ struct MenuBarLabel: View {
     var body: some View {
         let summary = highestLoad()
         HStack(spacing: 4) {
-            BarsIcon(short: summary.fiveHour, long: summary.sevenDay,
-                     color: summary.color)
-                .frame(width: 18, height: 14)
+            Image(nsImage: BarsIconRenderer.render(
+                short: summary.fiveHour,
+                long: summary.sevenDay,
+                color: summary.nsColor
+            ))
             if !compactMenuBar, let pct = summary.headlinePercent {
                 Text("\(pct)%")
                     .font(.system(size: 11, weight: .medium).monospacedDigit())
@@ -27,6 +35,7 @@ struct MenuBarLabel: View {
         let sevenDay: Double?
         let headlinePercent: Int?
         let color: Color
+        let nsColor: NSColor
     }
 
     private func highestLoad() -> Summary {
@@ -51,49 +60,51 @@ struct MenuBarLabel: View {
         }
 
         let pct = headline.map { Int(((1 - $0) * 100).rounded()) }
-        let color: Color = {
-            guard let h = headline else { return .secondary }
-            if h >= 0.9 { return .red }
-            if h >= 0.7 { return .orange }
-            return .primary
+        let (swiftColor, nsColor): (Color, NSColor) = {
+            guard let h = headline else { return (.primary, .labelColor) }
+            if h >= 0.9 { return (.red, .systemRed) }
+            if h >= 0.7 { return (.orange, .systemOrange) }
+            return (.primary, .labelColor)
         }()
         return Summary(fiveHour: best5, sevenDay: best7,
-                       headlinePercent: pct, color: color)
+                       headlinePercent: pct, color: swiftColor, nsColor: nsColor)
     }
 }
 
-private struct BarsIcon: View {
-    let short: Double?
-    let long: Double?
-    let color: Color
+/// Rasterises the two-bar gauge into an NSImage so that MenuBarExtra can
+/// display it reliably across all macOS versions, including macOS 26.
+enum BarsIconRenderer {
+    static func render(short: Double?, long: Double?, color: NSColor) -> NSImage {
+        let width: CGFloat = 18
+        let height: CGFloat = 14
+        let barHeight: CGFloat = 4
+        let gap: CGFloat = 3
+        let totalH = barHeight * 2 + gap
+        let topY = (height - totalH) / 2
+        let cornerRadius: CGFloat = 1.5
 
-    var body: some View {
-        GeometryReader { geo in
-            let w = geo.size.width
-            let h = geo.size.height
-            let barHeight: CGFloat = 4
-            let gap: CGFloat = 3
-            let totalH = barHeight * 2 + gap
-            let topY = (h - totalH) / 2
-
-            ZStack(alignment: .topLeading) {
-                bar(width: w, value: short, y: topY, height: barHeight)
-                bar(width: w, value: long, y: topY + barHeight + gap, height: barHeight)
+        let image = NSImage(size: NSSize(width: width, height: height), flipped: true) { _ in
+            func drawBar(y: CGFloat, value: Double?) {
+                let v = CGFloat(max(0, min(1, value ?? 0)))
+                // Background track
+                let bgRect = NSRect(x: 0, y: y, width: width, height: barHeight)
+                let bgPath = NSBezierPath(roundedRect: bgRect, xRadius: cornerRadius, yRadius: cornerRadius)
+                color.withAlphaComponent(0.25).setFill()
+                bgPath.fill()
+                // Filled portion
+                let fgWidth = value == nil ? 0 : max(1, width * v)
+                if fgWidth > 0 {
+                    let fgRect = NSRect(x: 0, y: y, width: fgWidth, height: barHeight)
+                    let fgPath = NSBezierPath(roundedRect: fgRect, xRadius: cornerRadius, yRadius: cornerRadius)
+                    color.setFill()
+                    fgPath.fill()
+                }
             }
+            drawBar(y: topY, value: short)
+            drawBar(y: topY + barHeight + gap, value: long)
+            return true
         }
-    }
-
-    @ViewBuilder
-    private func bar(width: CGFloat, value: Double?, y: CGFloat, height: CGFloat) -> some View {
-        let v = max(0, min(1, value ?? 0))
-        ZStack(alignment: .leading) {
-            RoundedRectangle(cornerRadius: 1.5)
-                .fill(color.opacity(0.25))
-                .frame(width: width, height: height)
-            RoundedRectangle(cornerRadius: 1.5)
-                .fill(color)
-                .frame(width: max(value == nil ? 0 : 1, width * v), height: height)
-        }
-        .offset(y: y)
+        image.isTemplate = false
+        return image
     }
 }

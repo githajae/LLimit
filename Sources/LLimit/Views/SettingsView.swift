@@ -16,6 +16,14 @@ enum LoginStatus: Equatable {
     static func read(_ account: Account) -> LoginStatus {
         switch account.provider {
         case .claude:
+            // Check LLimit's own per-account credential snapshot first.
+            if ClaudeAuthSource.hasSnapshot(for: account.id) {
+                if let bundle = try? ClaudeAuthSource(accountId: account.id).load(),
+                   !bundle.accessToken.isEmpty {
+                    return .signedIn(email: nil)
+                }
+            }
+            // Fall back to the CLI's .claude.json for email display.
             let path = account.configDir + "/.claude.json"
             guard let data = try? Data(contentsOf: URL(fileURLWithPath: path)),
                   let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
@@ -179,6 +187,7 @@ private struct AccountsTab: View {
             EditForm(
                 initial: target.account,
                 isAdding: target.isAdding,
+                usageState: refresher.states[target.id] ?? .idle,
                 onSave: { updated in save(updated, wasAdding: target.isAdding) },
                 onCancel: { editing = nil },
                 onLogin: { acc in loginAccount = acc }
@@ -249,17 +258,20 @@ private struct AccountsTab: View {
 private struct EditForm: View {
     @State private var draft: Account
     let isAdding: Bool
+    let usageState: UsageState
     let onSave: (Account) -> Void
     let onCancel: () -> Void
     let onLogin: (Account) -> Void
 
     init(initial: Account,
          isAdding: Bool,
+         usageState: UsageState = .idle,
          onSave: @escaping (Account) -> Void,
          onCancel: @escaping () -> Void,
          onLogin: @escaping (Account) -> Void) {
         _draft = State(initialValue: initial)
         self.isAdding = isAdding
+        self.usageState = usageState
         self.onSave = onSave
         self.onCancel = onCancel
         self.onLogin = onLogin
@@ -322,7 +334,18 @@ private struct EditForm: View {
 
     @ViewBuilder
     private var loginStatusRow: some View {
-        let status = LoginStatus.read(draft)
+        let fileStatus = LoginStatus.read(draft)
+        // If file says signed in but the API returned an auth error,
+        // show "token expired" instead of misleading "Signed in".
+        let isApiAuthError: Bool = {
+            if case .error(let msg) = usageState,
+               msg.contains("Not signed in") || msg.contains("Login") {
+                return true
+            }
+            return false
+        }()
+        let status: LoginStatus = (fileStatus.isSignedIn && isApiAuthError)
+            ? .signedOut : fileStatus
         HStack(spacing: 6) {
             switch status {
             case .signedIn(let email):
@@ -335,6 +358,12 @@ private struct EditForm: View {
                     Text("Signed in")
                         .font(.callout)
                 }
+            case .signedOut where fileStatus.isSignedIn:
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.orange)
+                Text("Token expired — sign in again")
+                    .font(.callout)
+                    .foregroundStyle(.orange)
             case .signedOut:
                 Image(systemName: "xmark.seal")
                     .foregroundStyle(.secondary)

@@ -32,26 +32,23 @@ struct MenuContentView: View {
                     .font(.callout)
                     .padding(16)
             } else {
-                ScrollView {
-                    VStack(spacing: 8) {
-                        ForEach(store.accounts) { account in
-                            if popoverMode == .summary {
-                                AccountRowSummary(
-                                    account: account,
-                                    state: refresher.states[account.id] ?? .idle
-                                )
-                            } else {
-                                AccountCardDetailed(
-                                    account: account,
-                                    state: refresher.states[account.id] ?? .idle
-                                )
-                            }
+                VStack(spacing: 8) {
+                    ForEach(store.accounts) { account in
+                        if popoverMode == .summary {
+                            AccountRowSummary(
+                                account: account,
+                                state: refresher.states[account.id] ?? .idle
+                            )
+                        } else {
+                            AccountCardDetailed(
+                                account: account,
+                                state: refresher.states[account.id] ?? .idle
+                            )
                         }
                     }
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 12)
                 }
-                .frame(maxHeight: maxScrollHeight)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
             }
 
             Divider().padding(.horizontal, 16)
