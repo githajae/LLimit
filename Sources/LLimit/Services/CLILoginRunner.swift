@@ -46,7 +46,7 @@ final class CLILoginRunner: ObservableObject {
         // Codex spins a local OAuth callback on port 1455. A previous,
         // half-dead login can keep the socket bound; free it before launching.
         if account.provider == .codex {
-            Self.freePort(1455)
+            PortUtil.freePort(1455)
         }
 
         commandLine = "\(envKey)=\(account.configDir) \(binPath) \(args.joined(separator: " "))"
@@ -165,27 +165,6 @@ final class CLILoginRunner: ObservableObject {
             return nil
         }
         return url
-    }
-
-    private static func freePort(_ port: Int) {
-        let lsof = Process()
-        lsof.executableURL = URL(fileURLWithPath: "/usr/sbin/lsof")
-        lsof.arguments = ["-ti", "tcp:\(port)"]
-        let pipe = Pipe()
-        lsof.standardOutput = pipe
-        do {
-            try lsof.run()
-            lsof.waitUntilExit()
-        } catch {
-            return
-        }
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        let pids = (String(data: data, encoding: .utf8) ?? "")
-            .split(whereSeparator: { $0.isNewline })
-            .compactMap { Int32($0) }
-        for pid in pids { kill(pid, SIGTERM) }
-        if !pids.isEmpty { Thread.sleep(forTimeInterval: 0.5) }
-        for pid in pids { kill(pid, SIGKILL) }
     }
 
     private func command(for provider: Provider) -> (String, [String], String) {

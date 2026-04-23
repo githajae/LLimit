@@ -12,6 +12,7 @@ struct LoginSheet: View {
     @State private var codeInput = ""
 
     @State private var oauthStatus: OAuthStatus = .idle
+    @State private var oauthSession: ClaudeOAuthSession?
 
     enum OAuthStatus: Equatable {
         case idle
@@ -75,6 +76,8 @@ struct LoginSheet: View {
 
                 if oauthStatus == .waiting || oauthStatus == .exchanging {
                     ProgressView().controlSize(.small)
+                    Button("Cancel sign-in") { cancelOAuth() }
+                        .controlSize(.small)
                 }
             }
 
@@ -86,7 +89,10 @@ struct LoginSheet: View {
         Divider()
         HStack(spacing: 8) {
             Spacer()
-            Button("Cancel") { dismiss() }
+            Button("Cancel") {
+                cancelOAuth()
+                dismiss()
+            }
         }
         .padding(12)
     }
@@ -132,6 +138,8 @@ struct LoginSheet: View {
             FileHandle.standardError.write(Data("[oauth] startOAuth: ignored (already in flight, status=\(oauthStatus))\n".utf8))
             return
         }
+        let session = ClaudeOAuthSession()
+        oauthSession = session
         oauthStatus = .waiting
         let acctId = account.id
         // MUST be a `Task { @MainActor }`, not `Task.detached`. A detached
@@ -142,7 +150,7 @@ struct LoginSheet: View {
         // so running on @MainActor doesn't block UI.
         Task { @MainActor in
             do {
-                let token = try await ClaudeOAuthLogin.run()
+                let token = try await ClaudeOAuthLogin.run(session: session)
                 oauthStatus = .exchanging
                 try ClaudeAuthSource.saveOAuth(
                     accessToken: token.accessToken,
@@ -151,13 +159,25 @@ struct LoginSheet: View {
                     for: acctId
                 )
                 oauthStatus = .done
+                oauthSession = nil
                 onFinished?()
                 dismiss()
+            } catch is CancellationError {
+                // User-initiated abort (Cancel button or sheet dismiss).
+                // Reset to idle so Sign in is clickable again.
+                oauthStatus = .idle
+                oauthSession = nil
             } catch {
                 FileHandle.standardError.write(Data("[oauth] failed: \(error)\n".utf8))
                 oauthStatus = .failed(error.localizedDescription)
+                oauthSession = nil
             }
         }
+    }
+
+    private func cancelOAuth() {
+        guard let session = oauthSession else { return }
+        Task { await session.cancel() }
     }
 
     // MARK: - Codex: existing in-app CLI flow

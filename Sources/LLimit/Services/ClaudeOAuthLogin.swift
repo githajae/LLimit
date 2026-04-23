@@ -63,14 +63,26 @@ enum ClaudeOAuthLogin {
     }
 
     /// One end-to-end run. Returns the token from the exchange, or throws.
-    static func run() async throws -> TokenResponse {
+    ///
+    /// Defensive: a prior flow that crashed or was force-quit can leave a
+    /// listener bound on `redirectPort`. `PortUtil.freePort` clears it so we
+    /// don't hit EADDRINUSE when binding below.
+    ///
+    /// Pass a `session` to enable external cancellation (Cancel button in
+    /// LoginSheet). The session holds a weak reference to the callback
+    /// server and can abort the `waitForCallback` continuation.
+    static func run(session: ClaudeOAuthSession? = nil) async throws -> TokenResponse {
+        PortUtil.freePort(Int(redirectPort))
         let server = try OAuthCallbackServer(port: redirectPort)
+        await session?.attach(server)
         do {
             let result = try await runInner(server: server)
             await server.stop()
+            await session?.detach()
             return result
         } catch {
             await server.stop()
+            await session?.detach()
             throw error
         }
     }
@@ -239,6 +251,7 @@ final class OAuthCallbackServer {
     private var bound: UInt16 = 0
     private var continuation: CheckedContinuation<URL, Error>?
     private var resolved = false   // queue-isolated; set the moment we hand off a URL
+    private var cancelled = false  // queue-isolated; prevents late resumes after cancel()
 
     /// Binds to a FIXED port on the loopback interface. Anthropic's authorize
     /// page redirects to whatever `redirect_uri` we sent, so the port has to
@@ -288,9 +301,56 @@ final class OAuthCallbackServer {
         }
     }
 
-    func waitForCallback() async throws -> URL {
-        try await withCheckedThrowingContinuation { (cont: CheckedContinuation<URL, Error>) in
-            self.continuation = cont
+    /// Waits for the browser to redirect back with an auth code.
+    ///
+    /// Caps the wait at `timeout` seconds so a user who closes the browser
+    /// mid-flow isn't left with the UI stuck in `.waiting` forever — after
+    /// the timeout the continuation resumes with a clear error and the user
+    /// can retry. Also respects `cancel()` for user-initiated aborts.
+    func waitForCallback(timeout: TimeInterval = 180) async throws -> URL {
+        try await withThrowingTaskGroup(of: URL.self) { group in
+            group.addTask { [weak self] in
+                try await withCheckedThrowingContinuation { (cont: CheckedContinuation<URL, Error>) in
+                    guard let self else {
+                        cont.resume(throwing: CancellationError()); return
+                    }
+                    self.queue.async {
+                        if self.cancelled {
+                            cont.resume(throwing: CancellationError())
+                            return
+                        }
+                        self.continuation = cont
+                    }
+                }
+            }
+            group.addTask {
+                try await Task.sleep(nanoseconds: UInt64(timeout * 1_000_000_000))
+                throw NSError(
+                    domain: "ClaudeOAuth", code: -7,
+                    userInfo: [NSLocalizedDescriptionKey:
+                        "Sign-in timed out. Please try again."]
+                )
+            }
+            guard let url = try await group.next() else {
+                throw CancellationError()
+            }
+            group.cancelAll()
+            return url
+        }
+    }
+
+    /// User-initiated abort (Cancel button in LoginSheet, or sheet dismiss).
+    /// Resumes the pending continuation with `CancellationError` so the
+    /// Task in LoginSheet resolves promptly instead of waiting out the
+    /// full timeout.
+    func cancel() {
+        queue.async { [weak self] in
+            guard let self, !self.cancelled else { return }
+            self.cancelled = true
+            if let cont = self.continuation {
+                self.continuation = nil
+                cont.resume(throwing: CancellationError())
+            }
         }
     }
 
@@ -380,5 +440,30 @@ final class OAuthCallbackServer {
             self.continuation?.resume(returning: url)
             self.continuation = nil
         }
+    }
+}
+
+/// Handle passed to `ClaudeOAuthLogin.run(session:)` so the caller (LoginSheet)
+/// can abort an in-flight OAuth flow — e.g. when the user clicks "Cancel
+/// sign-in" or dismisses the sheet after closing the browser tab.
+///
+/// Holds a weak reference to the currently-bound `OAuthCallbackServer` and
+/// forwards `cancel()` through to it. `detach()` runs after `run()` returns
+/// (success or failure) so a stale session can't cancel a future flow.
+actor ClaudeOAuthSession {
+    private weak var server: OAuthCallbackServer?
+
+    init() {}
+
+    func attach(_ s: OAuthCallbackServer) {
+        server = s
+    }
+
+    func detach() {
+        server = nil
+    }
+
+    func cancel() {
+        server?.cancel()
     }
 }
