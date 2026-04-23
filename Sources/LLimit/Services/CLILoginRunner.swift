@@ -28,10 +28,15 @@ final class CLILoginRunner: ObservableObject {
     private var process: Process?
     private var stdinHandle: FileHandle?
     private var currentProvider: Provider?
+    private var currentAccountId: UUID?
 
     func launch(account: Account) {
         cancel()
         currentProvider = account.provider
+        currentAccountId = account.id
+        // Announce login-in-progress so RefreshCoordinator won't read half-
+        // written auth.json during the CLI's browser handoff.
+        Task { await LoginGate.shared.enter(account.id) }
         let (binary, args, envKey) = command(for: account.provider)
         guard let binPath = Self.resolveBinary(binary) else {
             status = .failed("\(binary) not found in PATH")
@@ -79,6 +84,7 @@ final class CLILoginRunner: ObservableObject {
         p.standardInput = inPipe
         stdinHandle = inPipe.fileHandleForWriting
 
+        let acctId = account.id
         p.terminationHandler = { [weak self] proc in
             Task { @MainActor in
                 guard let self else { return }
@@ -88,6 +94,7 @@ final class CLILoginRunner: ObservableObject {
                 } else {
                     self.status = .failed("exited with code \(proc.terminationStatus)")
                 }
+                await LoginGate.shared.leave(acctId)
             }
         }
 
@@ -105,6 +112,10 @@ final class CLILoginRunner: ObservableObject {
     func cancel() {
         if let p = process, p.isRunning {
             p.terminate()
+        }
+        if let id = currentAccountId {
+            Task { await LoginGate.shared.leave(id) }
+            currentAccountId = nil
         }
         process = nil
         stdinHandle = nil

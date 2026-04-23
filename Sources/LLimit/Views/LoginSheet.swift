@@ -166,6 +166,8 @@ struct LoginSheet: View {
         // task silently no-op. URLSession's awaits release the main thread,
         // so running on @MainActor doesn't block UI.
         Task { @MainActor in
+            await LoginGate.shared.enter(acctId)
+            defer { Task { await LoginGate.shared.leave(acctId) } }
             var savedSnapshot = false
             do {
                 let token = try await ClaudeOAuthLogin.run(session: session)
