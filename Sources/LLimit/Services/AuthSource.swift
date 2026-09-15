@@ -182,3 +182,81 @@ struct CodexAuthSource: AuthSource {
                       userInfo: [NSLocalizedDescriptionKey: "No access token in auth.json"])
     }
 }
+
+struct CursorAuthSource: AuthSource {
+    let accountId: UUID
+
+    static func snapshotURL(for accountId: UUID) -> URL {
+        ClaudeAuthSource.snapshotURL(for: accountId)
+    }
+
+    static func hasSnapshot(for accountId: UUID) -> Bool {
+        FileManager.default.fileExists(atPath: snapshotURL(for: accountId).path)
+    }
+
+    static func hasCLIKeychain() -> Bool {
+        (try? Keychain.readGenericPassword(service: "cursor-access-token"))?.isEmpty == false
+    }
+
+    static func snapshotKeychain(for accountId: UUID) throws {
+        let access = try Keychain.readGenericPassword(service: "cursor-access-token")
+        let refresh = try? Keychain.readGenericPassword(service: "cursor-refresh-token")
+        try save(accessToken: access, refreshToken: refresh, for: accountId)
+    }
+
+    static func save(accessToken: String, refreshToken: String?, for accountId: UUID) throws {
+        var inner: [String: Any] = ["accessToken": accessToken]
+        if let refreshToken { inner["refreshToken"] = refreshToken }
+        let blob: [String: Any] = ["cursorOauth": inner]
+        let data = try JSONSerialization.data(withJSONObject: blob, options: [])
+        let url = snapshotURL(for: accountId)
+        try data.write(to: url, options: .atomic)
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            throw NSError(
+                domain: "CursorAuth", code: -20,
+                userInfo: [NSLocalizedDescriptionKey: "Failed to persist credential snapshot."]
+            )
+        }
+        try? FileManager.default.setAttributes(
+            [.posixPermissions: 0o600], ofItemAtPath: url.path
+        )
+    }
+
+    static func deleteSnapshot(for accountId: UUID) {
+        try? FileManager.default.removeItem(at: snapshotURL(for: accountId))
+    }
+
+    func load() throws -> AuthBundle {
+        if let snap = try? loadSnapshot() {
+            return snap
+        }
+        guard let access = try? Keychain.readGenericPassword(service: "cursor-access-token"),
+              !access.isEmpty else {
+            throw UsageAPIError.notLoggedIn
+        }
+        let refresh = try? Keychain.readGenericPassword(service: "cursor-refresh-token")
+        return AuthBundle(
+            accessToken: access,
+            refreshToken: refresh,
+            expiresAt: nil,
+            organizationId: nil
+        )
+    }
+
+    private func loadSnapshot() throws -> AuthBundle {
+        let url = Self.snapshotURL(for: accountId)
+        let data = try Data(contentsOf: url)
+        struct Outer: Decodable { let cursorOauth: Inner }
+        struct Inner: Decodable {
+            let accessToken: String
+            let refreshToken: String?
+        }
+        let decoded = try JSONDecoder().decode(Outer.self, from: data)
+        return AuthBundle(
+            accessToken: decoded.cursorOauth.accessToken,
+            refreshToken: decoded.cursorOauth.refreshToken,
+            expiresAt: nil,
+            organizationId: nil
+        )
+    }
+}

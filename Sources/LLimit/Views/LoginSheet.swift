@@ -43,11 +43,14 @@ struct LoginSheet: View {
         }
         .frame(width: 520)
         .onAppear {
-            if account.provider == .codex { startLogin() }
+            if account.provider != .claude { startLogin() }
         }
         .onChange(of: runner.status) { _, new in
-            guard account.provider == .codex,
+            guard account.provider != .claude,
                   case .succeeded = new, !detectedLogin else { return }
+            if account.provider == .cursor {
+                try? CursorAuthSource.snapshotKeychain(for: account.id)
+            }
             detectedLogin = true
             onFinished?()
             dismiss()

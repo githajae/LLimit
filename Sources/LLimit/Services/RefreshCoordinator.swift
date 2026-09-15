@@ -94,6 +94,7 @@ final class RefreshCoordinator: ObservableObject {
         switch account.provider {
         case .claude: return AnthropicUsageAPI()
         case .codex:  return OpenAIUsageAPI()
+        case .cursor: return CursorUsageAPI()
         }
     }
 }

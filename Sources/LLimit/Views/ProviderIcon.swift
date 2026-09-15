@@ -9,8 +9,9 @@ struct ProviderIcon: View {
 
     var color: Color {
         switch provider {
-        case .claude: return Color(red: 0.85, green: 0.51, blue: 0.34) // Anthropic clay/orange
-        case .codex:  return Color(red: 0.06, green: 0.65, blue: 0.52) // OpenAI teal-green
+        case .claude: return Color(red: 0.85, green: 0.51, blue: 0.34)
+        case .codex:  return Color(red: 0.06, green: 0.65, blue: 0.52)
+        case .cursor: return Color(red: 0.82, green: 0.84, blue: 0.88)
         }
     }
 
@@ -19,6 +20,7 @@ struct ProviderIcon: View {
             switch provider {
             case .claude: AnthropicMark()
             case .codex:  OpenAIKnot()
+            case .cursor: CursorMark()
             }
         }
         .foregroundStyle(color)
@@ -87,6 +89,54 @@ private struct OpenAIKnot: View {
             .position(x: geo.size.width / 2, y: geo.size.height / 2)
         }
         .aspectRatio(1, contentMode: .fit)
+    }
+}
+
+private struct CursorMark: View {
+    var body: some View {
+        GeometryReader { geo in
+            let s = min(geo.size.width, geo.size.height)
+            CursorCube()
+                .fill(style: FillStyle(eoFill: true))
+                .frame(width: s, height: s)
+                .position(x: geo.size.width / 2, y: geo.size.height / 2)
+        }
+        .aspectRatio(1, contentMode: .fit)
+    }
+}
+
+private struct CursorCube: Shape {
+    func path(in rect: CGRect) -> Path {
+        let s = min(rect.width, rect.height)
+        let ox = rect.midX - s / 2
+        let oy = rect.midY - s / 2
+        func pt(_ x: CGFloat, _ y: CGFloat) -> CGPoint {
+            CGPoint(x: ox + x / 24 * s, y: oy + y / 24 * s)
+        }
+        var path = Path()
+        path.move(to: pt(12.00, 0.13))
+        path.addLine(to: pt(1.89, 5.68))
+        path.addLine(to: pt(1.47, 6.40))
+        path.addLine(to: pt(1.47, 17.59))
+        path.addLine(to: pt(1.89, 18.31))
+        path.addLine(to: pt(11.50, 23.86))
+        path.addLine(to: pt(12.50, 23.86))
+        path.addLine(to: pt(22.11, 18.31))
+        path.addLine(to: pt(22.53, 17.59))
+        path.addLine(to: pt(22.53, 6.40))
+        path.addLine(to: pt(22.11, 5.68))
+        path.addLine(to: pt(12.50, 0.13))
+        path.closeSubpath()
+        path.move(to: pt(2.66, 6.34))
+        path.addLine(to: pt(21.21, 6.34))
+        path.addLine(to: pt(21.51, 6.85))
+        path.addLine(to: pt(12.23, 22.92))
+        path.addLine(to: pt(12.00, 22.86))
+        path.addLine(to: pt(12.00, 12.34))
+        path.addLine(to: pt(11.70, 11.83))
+        path.addLine(to: pt(2.59, 6.57))
+        path.closeSubpath()
+        return path
     }
 }
 

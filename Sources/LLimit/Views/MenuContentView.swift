@@ -1,5 +1,5 @@
-import SwiftUI
 import AppKit
+import SwiftUI
 
 struct MenuContentView: View {
     @EnvironmentObject var store: AccountStore
@@ -171,8 +171,7 @@ private struct AccountRowSummary: View {
     /// in *through LLimit* (which writes a per-account snapshot), every
     /// Claude row sees whichever credential the CLI logged in last.
     private var needsLoginToSeparate: Bool {
-        account.provider == .claude
-            && !ClaudeAuthSource.hasSnapshot(for: account.id)
+        claudeNeedsSeparateLogin(account)
     }
 
     @ViewBuilder
@@ -227,7 +226,7 @@ private struct MiniWindow: View {
                     .lineLimit(1)
                     .fixedSize(horizontal: true, vertical: false)
                 Spacer(minLength: 2)
-                Text("\(Int(((1 - pct) * 100).rounded()))% left")
+                Text(window.detail ?? "\(Int(((1 - pct) * 100).rounded()))% left")
                     .font(.caption.monospacedDigit().weight(.semibold))
                     .foregroundStyle(color)
                     .lineLimit(1)
@@ -244,6 +243,10 @@ private struct MiniWindow: View {
     private var shortLabel: String {
         let l = window.label.lowercased()
         if l.contains("opus") { return "OPUS" }
+        if l == "cursor-models" { return "MODELS" }
+        if l == "other-models" { return "OTHER" }
+        if l == "grok-bot" { return "GROK" }
+        if l == "on-demand" { return "OD" }
         return window.label.uppercased()
     }
 }
@@ -307,8 +310,7 @@ private struct AccountCardDetailed: View {
     }
 
     private var needsLoginToSeparate: Bool {
-        account.provider == .claude
-            && !ClaudeAuthSource.hasSnapshot(for: account.id)
+        claudeNeedsSeparateLogin(account)
     }
 
     @ViewBuilder
@@ -382,6 +384,10 @@ private struct WindowRow: View {
         switch window.label {
         case "5h": return "5-hour window"
         case "7d": return "Weekly window"
+        case "cursor-models": return "Cursor Models"
+        case "other-models": return "Other Models"
+        case "grok-bot": return "Grok Bot"
+        case "on-demand": return "On-demand"
         default: return window.label + " window"
         }
     }
@@ -396,6 +402,9 @@ private struct WindowRow: View {
     }
 
     private var rightText: String {
+        if let detail = window.detail, !detail.isEmpty {
+            return detail
+        }
         if let p = window.usedPercent {
             return "\(Int(((1 - p) * 100).rounded()))% left"
         }
@@ -444,6 +453,11 @@ private struct UsageBar: View {
     }
 }
 
+private func claudeNeedsSeparateLogin(_ account: Account) -> Bool {
+    if CommandLine.arguments.contains("--readme-snapshot") { return false }
+    return account.provider == .claude && !ClaudeAuthSource.hasSnapshot(for: account.id)
+}
+
 private func formatRelative(_ date: Date) -> String {
     let secs = Int(date.timeIntervalSinceNow)
     if secs < 60 { return "<1m" }
@@ -456,4 +470,189 @@ private func formatRelative(_ date: Date) -> String {
     let d = secs / 86400
     let h = (secs % 86400) / 3600
     return h > 0 ? "\(d)d \(h)h" : "\(d)d"
+}
+
+enum ReadmeSnapshot {
+    static func export(to path: String) {
+        let app = NSApplication.shared
+        app.setActivationPolicy(.accessory)
+        let view = ReadmeSnapshotView()
+            .frame(width: 540)
+            .preferredColorScheme(.dark)
+        let hosting = NSHostingView(rootView: view)
+        hosting.appearance = NSAppearance(named: .darkAqua)
+        let window = NSWindow(
+            contentRect: NSRect(x: -4000, y: -4000, width: 540, height: 1400),
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false
+        )
+        window.isReleasedWhenClosed = false
+        window.backgroundColor = .windowBackgroundColor
+        window.contentView = hosting
+        hosting.layoutSubtreeIfNeeded()
+        var size = hosting.fittingSize
+        size.width = 540
+        if size.height < 200 { size.height = 900 }
+        hosting.frame = NSRect(origin: .zero, size: size)
+        window.setContentSize(size)
+        window.orderFront(nil)
+        RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.2))
+        hosting.layoutSubtreeIfNeeded()
+        size = hosting.fittingSize
+        size.width = 540
+        if size.height < 200 { size.height = 900 }
+        hosting.frame = NSRect(origin: .zero, size: size)
+        window.setContentSize(size)
+        let scale: CGFloat = 2
+        guard let rep = NSBitmapImageRep(
+            bitmapDataPlanes: nil,
+            pixelsWide: Int(size.width * scale),
+            pixelsHigh: Int(size.height * scale),
+            bitsPerSample: 8,
+            samplesPerPixel: 4,
+            hasAlpha: true,
+            isPlanar: false,
+            colorSpaceName: .deviceRGB,
+            bytesPerRow: 0,
+            bitsPerPixel: 0
+        ) else {
+            FileHandle.standardError.write(Data("readme snapshot: capture failed\n".utf8))
+            Foundation.exit(1)
+        }
+        rep.size = size
+        hosting.cacheDisplay(in: hosting.bounds, to: rep)
+        guard let png = rep.representation(using: .png, properties: [:]) else {
+            Foundation.exit(1)
+        }
+        let dest = URL(fileURLWithPath: path)
+        do {
+            try FileManager.default.createDirectory(
+                at: dest.deletingLastPathComponent(),
+                withIntermediateDirectories: true
+            )
+            try png.write(to: dest)
+        } catch {
+            FileHandle.standardError.write(Data("readme snapshot: \(error.localizedDescription)\n".utf8))
+            Foundation.exit(1)
+        }
+        window.close()
+    }
+}
+
+private struct ReadmeSnapshotView: View {
+    @State private var popoverMode = MenuContentView.PopoverMode.detailed
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 10) {
+                Image(systemName: "gauge.with.dots.needle.50percent")
+                    .foregroundStyle(.tint)
+                    .font(.title3)
+                Text("LLimit").font(.headline)
+                Spacer()
+                Picker("", selection: $popoverMode) {
+                    ForEach(MenuContentView.PopoverMode.allCases) { m in
+                        Image(systemName: m.systemImage).tag(m)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .frame(width: 80)
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 14)
+            .padding(.bottom, 12)
+
+            Divider().padding(.horizontal, 16)
+
+            VStack(spacing: 8) {
+                AccountCardDetailed(account: Self.claude, state: .loaded(Self.claudeSnap))
+                AccountCardDetailed(account: Self.codex, state: .loaded(Self.codexSnap))
+                AccountCardDetailed(account: Self.cursor, state: .loaded(Self.cursorSnap))
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+
+            Divider().padding(.horizontal, 16)
+
+            HStack(spacing: 12) {
+                Button {} label: {
+                    Label("Refresh", systemImage: "arrow.clockwise")
+                }
+                Spacer()
+                Button("Settings…") {}
+                Button("Quit") {}
+            }
+            .controlSize(.small)
+            .buttonStyle(.borderless)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
+        }
+        .frame(width: 540)
+        .background(Color(NSColor.windowBackgroundColor))
+    }
+
+    private static let claude = Account(
+        id: UUID(uuidString: "11111111-1111-4111-8111-111111111111")!,
+        name: "Claude",
+        provider: .claude,
+        configDir: "~/.claude"
+    )
+    private static let codex = Account(
+        id: UUID(uuidString: "22222222-2222-4222-8222-222222222222")!,
+        name: "Codex",
+        provider: .codex,
+        configDir: "~/.codex"
+    )
+    private static let cursor = Account(
+        id: UUID(uuidString: "33333333-3333-4333-8333-333333333333")!,
+        name: "Cursor",
+        provider: .cursor,
+        configDir: "~/.cursor"
+    )
+
+    private static let claudeSnap = UsageSnapshot(
+        fetchedAt: Date(),
+        windows: [
+            UsageWindow(label: "5h", usedPercent: 0, resetsAt: Date().addingTimeInterval(5 * 3600 + 60)),
+            UsageWindow(label: "7d", usedPercent: 0.12, resetsAt: Date().addingTimeInterval(6 * 86400 + 3600)),
+        ],
+        email: "ada@example.com",
+        planLabel: "Max"
+    )
+    private static let codexSnap = UsageSnapshot(
+        fetchedAt: Date(),
+        windows: [
+            UsageWindow(label: "5h", usedPercent: 0, resetsAt: Date().addingTimeInterval(5 * 3600 + 60)),
+            UsageWindow(label: "7d", usedPercent: 0.12, resetsAt: Date().addingTimeInterval(6 * 86400 + 3600)),
+        ],
+        email: "sam@example.com",
+        planLabel: "Plus"
+    )
+    private static let cursorSnap = UsageSnapshot(
+        fetchedAt: Date(),
+        windows: [
+            UsageWindow(
+                label: "cursor-models",
+                usedPercent: 0.01,
+                resetsAt: Date().addingTimeInterval(30 * 86400 + 3600),
+                detail: "1% used"
+            ),
+            UsageWindow(
+                label: "other-models",
+                usedPercent: 0,
+                resetsAt: Date().addingTimeInterval(30 * 86400 + 3600),
+                detail: "0% used"
+            ),
+            UsageWindow(
+                label: "grok-bot",
+                usedPercent: 0.01,
+                resetsAt: Date().addingTimeInterval(7 * 86400 + 3600),
+                detail: "1% used"
+            ),
+        ],
+        email: "you@example.com",
+        planLabel: "Ultra"
+    )
 }

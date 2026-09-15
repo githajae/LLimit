@@ -40,6 +40,7 @@ final class AccountStore: ObservableObject {
         load()
         if accounts.isEmpty { seedDefaults() }
         autoAddMissingDefaults()
+        renameCursorCLIAccounts()
         migrateKeychainIfNeeded()
     }
 
@@ -53,6 +54,15 @@ final class AccountStore: ObservableObject {
     /// additional account via LLimit — the keychain only holds one entry,
     /// and applying it to more than one account is what broke multi-
     /// account correctness in the first place.
+    private func renameCursorCLIAccounts() {
+        var changed = false
+        for i in accounts.indices where accounts[i].provider == .cursor && accounts[i].name == "Cursor (CLI)" {
+            accounts[i].name = "Cursor"
+            changed = true
+        }
+        if changed { save() }
+    }
+
     private func migrateKeychainIfNeeded() {
         let defaults = UserDefaults.standard
         let key = "llimit.didKeychainMigration.v1"
@@ -83,6 +93,9 @@ final class AccountStore: ObservableObject {
         accounts.removeAll { $0.id == account.id }
         if account.provider == .claude {
             ClaudeAuthSource.deleteSnapshot(for: account.id)
+        }
+        if account.provider == .cursor {
+            CursorAuthSource.deleteSnapshot(for: account.id)
         }
         save()
     }
@@ -147,17 +160,27 @@ final class AccountStore: ObservableObject {
             accounts.append(Account(name: "Codex (default)", provider: .codex, configDir: codexDir))
             save()
         }
+        let cursorDir = home + "/.cursor"
+        let hasCursorAccount = accounts.contains { $0.provider == .cursor }
+        if !hasCursorAccount && FileManager.default.fileExists(atPath: cursorDir) {
+            accounts.append(Account(name: "Cursor", provider: .cursor, configDir: cursorDir))
+            save()
+        }
     }
 
     private func seedDefaults() {
         let home = FileManager.default.homeDirectoryForCurrentUser.path
         let claudeDir = home + "/.claude"
         let codexDir = home + "/.codex"
+        let cursorDir = home + "/.cursor"
         if FileManager.default.fileExists(atPath: claudeDir) {
             accounts.append(Account(name: "Claude (default)", provider: .claude, configDir: claudeDir))
         }
         if FileManager.default.fileExists(atPath: codexDir) {
             accounts.append(Account(name: "Codex (default)", provider: .codex, configDir: codexDir))
+        }
+        if FileManager.default.fileExists(atPath: cursorDir) {
+            accounts.append(Account(name: "Cursor", provider: .cursor, configDir: cursorDir))
         }
         save()
     }

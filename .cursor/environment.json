@@ -1,0 +1,3 @@
+{
+  "install": "echo 'LLimit is a native macOS SwiftUI/AppKit app. Cloud VMs cannot compile or run it. Edit source only.'"
+}

@@ -1,0 +1,15 @@
+---
+description: Swift style for LLimit sources
+globs: "**/*.swift"
+alwaysApply: false
+---
+
+# Swift
+
+- `final class` + `@MainActor` + `ObservableObject` for stores (`AccountStore`, `RefreshCoordinator`)
+- Models are `struct` + `Codable` + `Hashable` / `Identifiable`
+- Provider-specific auth stays in `*AuthSource` / `ClaudeOAuthLogin` / `CLILoginRunner` (Cursor uses `agent login` + keychain snapshot)
+- Views take `@EnvironmentObject`; they do not open files or hit the network
+- Prefer existing helpers (`PortUtil`, `Keychain`, `AuthSource`) over new I/O
+- Do not add Swift packages, SPM dependencies, or an Xcode project unless asked
+- Do not log `Data`, URL query items, or OAuth fields

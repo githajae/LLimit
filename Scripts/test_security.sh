@@ -56,6 +56,12 @@ else
   fail "Credential files missing 0o600 permissions"
 fi
 
+if grep -A100 'struct CursorAuthSource' Sources/LLimit/Services/AuthSource.swift | grep -q 'posixPermissions.*0o600'; then
+  pass "Cursor snapshots get 0o600 permissions"
+else
+  fail "Cursor snapshots missing 0o600 permissions"
+fi
+
 if grep -q 'posixPermissions.*0o700' Sources/LLimit/Services/AuthSource.swift; then
   pass "Credentials directory gets 0o700 permissions"
 else
@@ -124,6 +130,41 @@ if grep -rn 'sk-ant-\|sk_live\|OPENAI_API_KEY.*=.*"sk-' Sources/LLimit/ 2>/dev/n
   fail "Possible hardcoded API keys found"
 else
   pass "No hardcoded API keys"
+fi
+
+echo ""
+echo "--- Cursor CLI ---"
+
+if grep -q 'case cursor' Sources/LLimit/Models/Account.swift; then
+  pass "Provider includes cursor"
+else
+  fail "Provider missing cursor"
+fi
+
+if grep -q 'https://api2.cursor.sh' Sources/LLimit/Services/UsageAPI.swift; then
+  pass "Cursor usage uses api2.cursor.sh HTTPS"
+else
+  fail "Cursor usage endpoint missing"
+fi
+
+if grep -q 'cursor-access-token' Sources/LLimit/Services/AuthSource.swift; then
+  pass "Cursor auth reads CLI keychain service"
+else
+  fail "Cursor CLI keychain service missing"
+fi
+
+if grep -n 'cursor-access-token\|accessToken' Sources/LLimit/Services/UsageAPI.swift \
+    | grep -E 'FileHandle|print\(|NSLog|write\(Data\(' | grep -v 'HTTP'; then
+  fail "Cursor token may be logged"
+else
+  pass "Cursor token not written to logs"
+fi
+
+if grep -q '"agent".*"login"' Sources/LLimit/Services/CLILoginRunner.swift \
+    || grep -q 'agent.*login' Sources/LLimit/Services/CLILoginRunner.swift; then
+  pass "Cursor login uses agent CLI"
+else
+  fail "Cursor login command missing"
 fi
 
 # Summary

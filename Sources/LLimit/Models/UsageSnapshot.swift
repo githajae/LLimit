@@ -5,6 +5,7 @@ struct UsageWindow: Codable, Hashable {
     var usedPercent: Double?
     var tokens: Int?
     var resetsAt: Date?
+    var detail: String? = nil
 }
 
 struct UsageSnapshot: Codable, Hashable {

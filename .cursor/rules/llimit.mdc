@@ -1,0 +1,30 @@
+---
+description: LLimit project conventions and security invariants
+alwaysApply: true
+---
+
+# LLimit
+
+Native macOS menu-bar usage meter for Claude Code and Codex. SwiftPM executable at `Sources/LLimit`. No third-party packages.
+
+## Placement
+
+- Models in `Sources/LLimit/Models/`
+- I/O, auth, polling in `Sources/LLimit/Services/`
+- SwiftUI in `Sources/LLimit/Views/`
+- `App.swift` only wires `MenuBarExtra` + Settings
+
+## Auth isolation
+
+Each `Account` has its own credential snapshot. Claude and Cursor: `~/Library/Application Support/LLimit/credentials/<uuid>.json`. Codex: per-account `CODEX_HOME`. Cursor CLI tokens are `cursor-access-token` / `cursor-refresh-token` in the keychain. Never reuse one Claude or Cursor keychain entry across two accounts.
+
+## Secrets and network
+
+- File modes: credentials dir `0o700`, `accounts.json` and credential files `0o600`
+- No tokens, PKCE verifiers, auth query strings, or bodies in logs
+- HTTPS only off-localhost; org IDs via `URLComponents`
+- Claude login stays PKCE S256 + state check
+
+## Verification
+
+`Scripts/test_security.sh` after auth, logging, URL, or permission changes. `swift build` and `Scripts/package_app.sh` only on macOS with Xcode / CLT.

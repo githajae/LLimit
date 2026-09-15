@@ -29,17 +29,24 @@ echo "==> packaging"
 Scripts/package_app.sh "$VERSION" zip
 
 ZIP="build/release/LLimit-${VERSION}.zip"
+MAC_ZIP="build/release/LLimit-mac.zip"
+DMG="build/release/LLimit-${VERSION}.dmg"
 if [ ! -f "$ZIP" ]; then
   echo "missing $ZIP after packaging" >&2
   exit 1
 fi
+cp "$ZIP" "$MAC_ZIP"
+rm -f "$DMG"
+hdiutil create -volname LLimit -srcfolder build/release/LLimit.app -ov -format UDZO "$DMG" >/dev/null
 
 echo "==> tagging $TAG"
 git tag -a "$TAG" -m "Release $TAG"
 git push origin "$TAG"
 
 echo "==> creating GitHub release"
-gh release create "$TAG" "$ZIP" \
+ORIGIN_REPO="$(git remote get-url origin | sed -E 's#(git@github.com:|https://github.com/)##' | sed 's#\.git$##')"
+gh release create "$TAG" "$ZIP" "$MAC_ZIP" "$DMG" \
+    --repo "$ORIGIN_REPO" \
     --title "LLimit $TAG" \
     --notes "$NOTES"
 

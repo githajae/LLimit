@@ -184,6 +184,8 @@ final class CLILoginRunner: ObservableObject {
             return ("claude", ["auth", "login"], "CLAUDE_CONFIG_DIR")
         case .codex:
             return ("codex", ["login"], "CODEX_HOME")
+        case .cursor:
+            return ("agent", ["login"], "LLIMIT_CURSOR_HOME")
         }
     }
 
@@ -237,6 +239,14 @@ final class CLILoginRunner: ObservableObject {
             return false
         case .codex:
             let out = await runCapture("codex", ["login", "status"], env: ["CODEX_HOME": account.configDir])
+            return out.lowercased().contains("logged in")
+        case .cursor:
+            let out = await runCapture("agent", ["status", "--format", "json"], env: [:])
+            struct S: Decodable { let isAuthenticated: Bool? }
+            if let data = out.data(using: .utf8),
+               let s = try? JSONDecoder().decode(S.self, from: data) {
+                return s.isAuthenticated == true
+            }
             return out.lowercased().contains("logged in")
         }
     }

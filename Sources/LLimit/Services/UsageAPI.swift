@@ -648,6 +648,230 @@ struct OpenAIUsageAPI: UsageAPI {
     }
 }
 
+struct CursorUsageAPI: UsageAPI {
+    func fetch(account: Account) async throws -> UsageSnapshot {
+        let auth = try CursorAuthSource(accountId: account.id).load()
+        if !CursorAuthSource.hasSnapshot(for: account.id) {
+            try? CursorAuthSource.snapshotKeychain(for: account.id)
+        }
+        async let dashTask = Self.fetchDashboard(token: auth.accessToken)
+        async let sandTask = Self.fetchSandUsage(token: auth.accessToken)
+        let dash = try await dashTask
+        let sand = try? await sandTask
+        var windows: [UsageWindow] = []
+        if let plan = dash.planUsage {
+            let models = Self.percentAmount(plan.autoPercentUsed, message: dash.autoModelSelectedDisplayMessage)
+            windows.append(UsageWindow(
+                label: "cursor-models",
+                usedPercent: models.fraction,
+                resetsAt: dash.billingCycleEndDate,
+                detail: "\(models.display)% used"
+            ))
+            let other = Self.percentAmount(plan.apiPercentUsed, message: dash.namedModelSelectedDisplayMessage)
+            windows.append(UsageWindow(
+                label: "other-models",
+                usedPercent: other.fraction,
+                resetsAt: dash.billingCycleEndDate,
+                detail: "\(other.display)% used"
+            ))
+        }
+        if let sand, sand.hasNonZeroIncludedLimit == true || sand.usagePercent != nil {
+            let grok = Self.percentAmount(sand.usagePercent, message: nil)
+            windows.append(UsageWindow(
+                label: "grok-bot",
+                usedPercent: grok.fraction,
+                resetsAt: sand.resetDate,
+                detail: "\(grok.display)% used"
+            ))
+        }
+        if let spend = dash.spendLimitUsage,
+           let cap = spend.individualLimit, cap > 0 {
+            let used = spend.individualUsed ?? 0
+            windows.append(UsageWindow(
+                label: "on-demand",
+                usedPercent: used / cap,
+                resetsAt: dash.billingCycleEndDate,
+                detail: "\(Self.dollars(used)) / \(Self.dollars(cap))"
+            ))
+        }
+        let identity = await Self.cliIdentity()
+        return UsageSnapshot(
+            fetchedAt: Date(),
+            windows: windows,
+            note: nil,
+            email: Self.emailFromJWT(auth.accessToken) ?? identity.email,
+            planLabel: identity.tier.map { "\($0) plan" },
+            organization: nil
+        )
+    }
+
+    private struct Dashboard: Decodable {
+        let billingCycleEnd: String?
+        let planUsage: PlanUsage?
+        let spendLimitUsage: SpendLimit?
+        let autoModelSelectedDisplayMessage: String?
+        let namedModelSelectedDisplayMessage: String?
+
+        var billingCycleEndDate: Date? {
+            guard let billingCycleEnd, let ms = Double(billingCycleEnd) else { return nil }
+            return Date(timeIntervalSince1970: ms / 1000.0)
+        }
+    }
+
+    private struct PlanUsage: Decodable {
+        let autoPercentUsed: Double?
+        let apiPercentUsed: Double?
+    }
+
+    private struct SandUsage: Decodable {
+        let nextResetTimestampUtc: String?
+        let usagePercent: Double?
+        let hasNonZeroIncludedLimit: Bool?
+
+        var resetDate: Date? {
+            guard let nextResetTimestampUtc else { return nil }
+            let f = ISO8601DateFormatter()
+            f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            if let d = f.date(from: nextResetTimestampUtc) { return d }
+            f.formatOptions = [.withInternetDateTime]
+            return f.date(from: nextResetTimestampUtc)
+        }
+    }
+
+    private struct PercentAmount {
+        let fraction: Double
+        let display: Int
+    }
+
+    private static func percentAmount(_ raw: Double?, message: String?) -> PercentAmount {
+        if let message, let parsed = parseUsedPercent(message) {
+            return PercentAmount(fraction: Double(parsed) / 100.0, display: parsed)
+        }
+        let percent = raw ?? 0
+        let display: Int
+        if percent <= 0 {
+            display = 0
+        } else if percent < 1 {
+            display = 1
+        } else {
+            display = Int(percent.rounded())
+        }
+        return PercentAmount(
+            fraction: min(1, max(0, percent / 100.0)),
+            display: min(100, display)
+        )
+    }
+
+    private static func parseUsedPercent(_ message: String) -> Int? {
+        guard let range = message.range(of: "You've used ") else { return nil }
+        var digits = ""
+        for ch in message[range.upperBound...] {
+            if ch.isNumber { digits.append(ch) } else { break }
+        }
+        return Int(digits)
+    }
+
+    private struct SpendLimit: Decodable {
+        let individualLimit: Double?
+        let individualUsed: Double?
+    }
+
+    private static func dollars(_ cents: Double) -> String {
+        let value = cents / 100.0
+        if value == value.rounded() {
+            return String(format: "$%.0f", value)
+        }
+        return String(format: "$%.2f", value)
+    }
+
+    private static func fetchDashboard(token: String) async throws -> Dashboard {
+        var req = URLRequest(url: URL(string: "https://api2.cursor.sh/aiserver.v1.DashboardService/GetCurrentPeriodUsage")!)
+        req.httpMethod = "POST"
+        req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        req.setValue("application/json", forHTTPHeaderField: "Accept")
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.setValue("1", forHTTPHeaderField: "Connect-Protocol-Version")
+        req.setValue("LLimit/0.2 (Cursor CLI)", forHTTPHeaderField: "User-Agent")
+        req.httpBody = Data("{}".utf8)
+        req.timeoutInterval = 10
+        let (data, resp) = try await URLSession.shared.data(for: req)
+        let status = (resp as? HTTPURLResponse)?.statusCode ?? -1
+        FileHandle.standardError.write(Data("[cursor] dashboard HTTP \(status)\n".utf8))
+        if status == 401 || status == 403 {
+            throw UsageAPIError.notLoggedIn
+        }
+        if status >= 400 {
+            throw UsageAPIError.parse("HTTP \(status)")
+        }
+        return try JSONDecoder().decode(Dashboard.self, from: data)
+    }
+
+    private static func fetchSandUsage(token: String) async throws -> SandUsage {
+        var req = URLRequest(url: URL(string: "https://api2.cursor.sh/aiserver.v1.DashboardService/GetSandUsageStatus")!)
+        req.httpMethod = "POST"
+        req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        req.setValue("application/json", forHTTPHeaderField: "Accept")
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.setValue("1", forHTTPHeaderField: "Connect-Protocol-Version")
+        req.setValue("LLimit/0.2 (Cursor CLI)", forHTTPHeaderField: "User-Agent")
+        req.httpBody = Data("{}".utf8)
+        req.timeoutInterval = 10
+        let (data, resp) = try await URLSession.shared.data(for: req)
+        let status = (resp as? HTTPURLResponse)?.statusCode ?? -1
+        FileHandle.standardError.write(Data("[cursor] grok-bot HTTP \(status)\n".utf8))
+        if status == 401 || status == 403 {
+            throw UsageAPIError.notLoggedIn
+        }
+        if status >= 400 {
+            throw UsageAPIError.parse("HTTP \(status)")
+        }
+        return try JSONDecoder().decode(SandUsage.self, from: data)
+    }
+
+    private struct CLIIdentity {
+        let email: String?
+        let tier: String?
+    }
+
+    private static func cliIdentity() async -> CLIIdentity {
+        struct About: Decodable {
+            let userEmail: String?
+            let subscriptionTier: String?
+        }
+        struct Status: Decodable {
+            let userInfo: UserInfo?
+            struct UserInfo: Decodable {
+                let email: String?
+            }
+        }
+        let aboutOut = await CLILoginRunner.runCapture("agent", ["about", "--format", "json"], env: [:])
+        if let data = aboutOut.data(using: .utf8),
+           let about = try? JSONDecoder().decode(About.self, from: data) {
+            return CLIIdentity(email: about.userEmail, tier: about.subscriptionTier)
+        }
+        let statusOut = await CLILoginRunner.runCapture("agent", ["status", "--format", "json"], env: [:])
+        if let data = statusOut.data(using: .utf8),
+           let status = try? JSONDecoder().decode(Status.self, from: data) {
+            return CLIIdentity(email: status.userInfo?.email, tier: nil)
+        }
+        return CLIIdentity(email: nil, tier: nil)
+    }
+
+    private static func emailFromJWT(_ jwt: String) -> String? {
+        let parts = jwt.split(separator: ".")
+        guard parts.count >= 2 else { return nil }
+        var s = String(parts[1])
+            .replacingOccurrences(of: "-", with: "+")
+            .replacingOccurrences(of: "_", with: "/")
+        while s.count % 4 != 0 { s.append("=") }
+        guard let data = Data(base64Encoded: s),
+              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return nil
+        }
+        return obj["email"] as? String
+    }
+}
+
 // MARK: - Formatting
 
 func formatTokens(_ n: Int) -> String {

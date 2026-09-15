@@ -51,6 +51,14 @@ enum LoginStatus: Equatable {
                 || (root["OPENAI_API_KEY"] as? String)?.isEmpty == false
             guard hasToken else { return .signedOut }
             return .signedIn(email: codexEmailFromIDToken(tokens))
+        case .cursor:
+            if CursorAuthSource.hasSnapshot(for: account.id) {
+                return .signedIn(email: nil)
+            }
+            if CursorAuthSource.hasCLIKeychain() {
+                return .signedIn(email: nil)
+            }
+            return .signedOut
         }
     }
 
@@ -344,8 +352,13 @@ private struct EditForm: View {
                 .pickerStyle(.segmented)
                 .onChange(of: draft.provider) { _, p in
                     let home = FileManager.default.homeDirectoryForCurrentUser.path
-                    let base = home + (p == .claude ? "/.claude" : "/.codex")
-                    draft.configDir = Self.uniqueDir(from: base, excluding: existingConfigDirs)
+                    let suffix: String
+                    switch p {
+                    case .claude: suffix = "/.claude"
+                    case .codex: suffix = "/.codex"
+                    case .cursor: suffix = "/.cursor"
+                    }
+                    draft.configDir = Self.uniqueDir(from: home + suffix, excluding: existingConfigDirs)
                 }
                 HStack {
                     TextField("Config dir", text: $draft.configDir,

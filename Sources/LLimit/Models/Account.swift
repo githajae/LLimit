@@ -3,6 +3,7 @@ import Foundation
 enum Provider: String, Codable, CaseIterable, Identifiable {
     case claude
     case codex
+    case cursor
 
     var id: String { rawValue }
 
@@ -10,6 +11,7 @@ enum Provider: String, Codable, CaseIterable, Identifiable {
         switch self {
         case .claude: return "Claude"
         case .codex:  return "Codex"
+        case .cursor: return "Cursor"
         }
     }
 }
