@@ -71,7 +71,7 @@ final class CLILoginRunner: ObservableObject {
             p.executableURL = URL(fileURLWithPath: binPath)
             p.arguments = args
         }
-        var env = ProcessInfo.processInfo.environment
+        var env = CLIEnvironment.make(binaryPath: binPath)
         env[envKey] = account.configDir
         env["TERM"] = env["TERM"] ?? "xterm-256color"
         p.environment = env
@@ -246,7 +246,7 @@ final class CLILoginRunner: ObservableObject {
         let p = Process()
         p.executableURL = URL(fileURLWithPath: binPath)
         p.arguments = args
-        var environment = ProcessInfo.processInfo.environment
+        var environment = CLIEnvironment.make(binaryPath: binPath)
         for (k, v) in env { environment[k] = v }
         p.environment = environment
         let outPipe = Pipe()
