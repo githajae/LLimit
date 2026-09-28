@@ -448,7 +448,7 @@ private actor RateLimitsCache {
 /// headers.
 struct OpenAIUsageAPI: UsageAPI {
     func fetch(account: Account) async throws -> UsageSnapshot {
-        let auth = try Self.readAuth(configDir: account.configDir)
+        let auth = try Self.readAuth(configDir: account.authenticationDirectory)
         let usage = try await Self.fetchLiveUsage(
             token: auth.accessToken,
             accountId: auth.accountId

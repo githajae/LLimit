@@ -41,7 +41,7 @@ enum LoginStatus: Equatable {
             let email = oauth["emailAddress"] as? String
             return .signedIn(email: email)
         case .codex:
-            let path = account.configDir + "/auth.json"
+            let path = account.authenticationDirectory + "/auth.json"
             guard let data = try? Data(contentsOf: URL(fileURLWithPath: path)),
                   let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
                 return .signedOut
@@ -345,17 +345,22 @@ private struct EditForm: View {
                 .onChange(of: draft.provider) { _, p in
                     let home = FileManager.default.homeDirectoryForCurrentUser.path
                     let base = home + (p == .claude ? "/.claude" : "/.codex")
-                    draft.configDir = Self.uniqueDir(from: base, excluding: existingConfigDirs)
+                    draft.configDir = p == .codex ? draft.authenticationDirectory : Self.uniqueDir(from: base, excluding: existingConfigDirs)
                 }
-                HStack {
-                    TextField("Config dir", text: $draft.configDir,
-                              prompt: Text("~/.claude"))
-                    Button("Browse…") {
-                        let panel = NSOpenPanel()
-                        panel.canChooseDirectories = true
-                        panel.canChooseFiles = false
-                        if panel.runModal() == .OK, let url = panel.url {
-                            draft.configDir = url.path
+                if draft.provider == .codex {
+                    Text("Login is saved separately in LLimit. Switching accounts in Codex will not change this account.")
+                        .font(.callout).foregroundStyle(.secondary)
+                } else {
+                    HStack {
+                        TextField("Config dir", text: $draft.configDir,
+                                  prompt: Text("~/.claude"))
+                        Button("Browse…") {
+                            let panel = NSOpenPanel()
+                            panel.canChooseDirectories = true
+                            panel.canChooseFiles = false
+                            if panel.runModal() == .OK, let url = panel.url {
+                                draft.configDir = url.path
+                            }
                         }
                     }
                 }
@@ -377,7 +382,7 @@ private struct EditForm: View {
                 Button(isAdding ? "Add" : "Save") { onSave(draft) }
                     .keyboardShortcut(.defaultAction)
                     .buttonStyle(.borderedProminent)
-                    .disabled(!isValidConfigDir(draft.configDir))
+                    .disabled(draft.provider == .claude && !isValidConfigDir(draft.configDir))
             }
         }
     }

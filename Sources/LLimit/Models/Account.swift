@@ -18,5 +18,9 @@ struct Account: Identifiable, Codable, Hashable {
     var id: UUID = UUID()
     var name: String
     var provider: Provider
+    var authenticationDirectory: String {
+        provider == .codex ? CodexCredentialStore.shared.directory(for: id).path : configDir
+    }
+
     var configDir: String
 }

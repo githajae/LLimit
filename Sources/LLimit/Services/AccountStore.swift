@@ -40,7 +40,22 @@ final class AccountStore: ObservableObject {
         load()
         if accounts.isEmpty { seedDefaults() }
         autoAddMissingDefaults()
+        migrateCodexCredentials()
         migrateKeychainIfNeeded()
+    }
+
+    private func migrateCodexCredentials() {
+        for i in accounts.indices where accounts[i].provider == .codex {
+            do {
+                try CodexCredentialStore.shared.migrate(id: accounts[i].id, legacyDirectory: accounts[i].configDir)
+                accounts[i].configDir = accounts[i].authenticationDirectory
+            } catch {
+                // Keep the legacy source for a retry on next launch, but all
+                // runtime reads/logins still use authenticationDirectory.
+                FileHandle.standardError.write(Data("[codex] Credential migration failed; sign in again or restart to retry.\n".utf8))
+            }
+        }
+        save()
     }
 
     /// Snapshot the Claude CLI keychain token into the first Claude account
@@ -75,6 +90,8 @@ final class AccountStore: ObservableObject {
     }
 
     func add(_ account: Account) {
+        var account = account
+        if account.provider == .codex { account.configDir = account.authenticationDirectory }
         accounts.append(account)
         save()
     }
@@ -88,6 +105,8 @@ final class AccountStore: ObservableObject {
     }
 
     func update(_ account: Account) {
+        var account = account
+        if account.provider == .codex { account.configDir = account.authenticationDirectory }
         if let i = accounts.firstIndex(where: { $0.id == account.id }) {
             accounts[i] = account
             save()

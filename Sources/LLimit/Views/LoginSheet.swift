@@ -27,7 +27,7 @@ struct LoginSheet: View {
         VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: 4) {
                 Text("Sign in: \(account.name)").font(.headline)
-                Text("\(account.provider.displayName) · \(account.configDir)")
+                Text("\(account.provider.displayName) · \(account.authenticationDirectory)")
                     .font(.caption).foregroundStyle(.secondary)
                     .lineLimit(1).truncationMode(.middle)
             }

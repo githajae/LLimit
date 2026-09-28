@@ -43,8 +43,16 @@ final class CLILoginRunner: ObservableObject {
             return
         }
 
+        if account.provider == .codex {
+            do { try CodexCredentialStore.shared.prepare(id: account.id) }
+            catch {
+                status = .failed("Cannot create private credential storage.")
+                Task { await LoginGate.shared.leave(account.id) }
+                return
+            }
+        }
         try? FileManager.default.createDirectory(
-            atPath: account.configDir,
+            atPath: account.authenticationDirectory,
             withIntermediateDirectories: true
         )
 
@@ -54,7 +62,7 @@ final class CLILoginRunner: ObservableObject {
             PortUtil.freePort(1455)
         }
 
-        commandLine = "\(envKey)=\(account.configDir) \(binPath) \(args.joined(separator: " "))"
+        commandLine = "\(envKey)=\(account.authenticationDirectory) \(binPath) \(args.joined(separator: " "))"
         output = ""
         detectedURL = nil
         prompt = nil
@@ -72,7 +80,7 @@ final class CLILoginRunner: ObservableObject {
             p.arguments = args
         }
         var env = CLIEnvironment.make(binaryPath: binPath)
-        env[envKey] = account.configDir
+        env[envKey] = account.authenticationDirectory
         env["TERM"] = env["TERM"] ?? "xterm-256color"
         p.environment = env
 
@@ -183,7 +191,7 @@ final class CLILoginRunner: ObservableObject {
         case .claude:
             return ("claude", ["auth", "login"], "CLAUDE_CONFIG_DIR")
         case .codex:
-            return ("codex", ["login"], "CODEX_HOME")
+            return ("codex", ["-c", "cli_auth_credentials_store=\"file\"", "login"], "CODEX_HOME")
         }
     }
 
@@ -228,7 +236,7 @@ final class CLILoginRunner: ObservableObject {
     static func isLoggedIn(account: Account) async -> Bool {
         switch account.provider {
         case .claude:
-            let out = await runCapture("claude", ["auth", "status"], env: ["CLAUDE_CONFIG_DIR": account.configDir])
+            let out = await runCapture("claude", ["auth", "status"], env: ["CLAUDE_CONFIG_DIR": account.authenticationDirectory])
             struct S: Decodable { let loggedIn: Bool }
             if let data = out.data(using: .utf8),
                let s = try? JSONDecoder().decode(S.self, from: data) {
@@ -236,7 +244,7 @@ final class CLILoginRunner: ObservableObject {
             }
             return false
         case .codex:
-            let out = await runCapture("codex", ["login", "status"], env: ["CODEX_HOME": account.configDir])
+            let out = await runCapture("codex", ["-c", "cli_auth_credentials_store=\"file\"", "login", "status"], env: ["CODEX_HOME": account.authenticationDirectory])
             return out.lowercased().contains("logged in")
         }
     }
