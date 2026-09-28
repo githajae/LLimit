@@ -64,15 +64,13 @@ enum ClaudeOAuthLogin {
 
     /// One end-to-end run. Returns the token from the exchange, or throws.
     ///
-    /// Defensive: a prior flow that crashed or was force-quit can leave a
-    /// listener bound on `redirectPort`. `PortUtil.freePort` clears it so we
-    /// don't hit EADDRINUSE when binding below.
+    /// A busy callback port is reported by the listener; never terminate
+    /// another process to take over its port.
     ///
     /// Pass a `session` to enable external cancellation (Cancel button in
     /// LoginSheet). The session holds a weak reference to the callback
     /// server and can abort the `waitForCallback` continuation.
     static func run(session: ClaudeOAuthSession? = nil) async throws -> TokenResponse {
-        PortUtil.freePort(Int(redirectPort))
         let server = try OAuthCallbackServer(port: redirectPort)
         await session?.attach(server)
         do {

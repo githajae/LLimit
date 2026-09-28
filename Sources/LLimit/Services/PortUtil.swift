@@ -1,30 +1,27 @@
 import Foundation
+import Darwin
 
-/// Shared port-cleanup helper used by OAuth callback servers.
-///
-/// A previous login attempt can leave a local listener bound (e.g. after a
-/// crash or force-quit). Without cleanup, the next attempt fails with
-/// EADDRINUSE. We find any process holding the TCP port via `lsof` and kill
-/// it — SIGTERM first, then SIGKILL after a short grace period.
+/// Check callback availability without signalling processes or contacting
+/// another login server's /cancel endpoint. Only an owned login may be cancelled.
 enum PortUtil {
-    static func freePort(_ port: Int) {
-        let lsof = Process()
-        lsof.executableURL = URL(fileURLWithPath: "/usr/sbin/lsof")
-        lsof.arguments = ["-ti", "tcp:\(port)"]
-        let pipe = Pipe()
-        lsof.standardOutput = pipe
-        do {
-            try lsof.run()
-            lsof.waitUntilExit()
-        } catch {
-            return
+    static func requireAvailable(_ port: UInt16) throws {
+        let fd = socket(AF_INET, SOCK_STREAM, 0)
+        guard fd >= 0 else { throw POSIXError(.EIO) }
+        defer { close(fd) }
+        var address = sockaddr_in()
+        address.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
+        address.sin_family = sa_family_t(AF_INET)
+        address.sin_port = port.bigEndian
+        address.sin_addr.s_addr = inet_addr("127.0.0.1")
+        let result = withUnsafePointer(to: &address) {
+            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                Darwin.bind(fd, $0, socklen_t(MemoryLayout<sockaddr_in>.size))
+            }
         }
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        let pids = (String(data: data, encoding: .utf8) ?? "")
-            .split(whereSeparator: { $0.isNewline })
-            .compactMap { Int32($0) }
-        for pid in pids { kill(pid, SIGTERM) }
-        if !pids.isEmpty { Thread.sleep(forTimeInterval: 0.5) }
-        for pid in pids { kill(pid, SIGKILL) }
+        guard result == 0 else {
+            throw NSError(domain: "LLimit.Login", code: Int(errno), userInfo: [
+                NSLocalizedDescriptionKey: "Sign-in port \(port) is unavailable. Finish or close the other sign-in window, then retry. LLimit has not stopped any other app."
+            ])
+        }
     }
 }

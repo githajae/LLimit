@@ -56,10 +56,16 @@ final class CLILoginRunner: ObservableObject {
             withIntermediateDirectories: true
         )
 
-        // Codex spins a local OAuth callback on port 1455. A previous,
-        // half-dead login can keep the socket bound; free it before launching.
+        // Never terminate an unrelated process to claim the callback port.
+        // The Codex CLI can also cancel a previous login server on conflict,
+        // so refuse to launch while another flow already owns the port.
         if account.provider == .codex {
-            PortUtil.freePort(1455)
+            do { try PortUtil.requireAvailable(1455) }
+            catch {
+                status = .failed(error.localizedDescription)
+                Task { await LoginGate.shared.leave(account.id) }
+                return
+            }
         }
 
         commandLine = "\(envKey)=\(account.authenticationDirectory) \(binPath) \(args.joined(separator: " "))"
