@@ -521,31 +521,33 @@ private struct ResetCreditsView: View {
                             }
                             expirationLabel(credit)
                         }
-                    }
-                    if credits.availableCount > 2 {
-                        Button("+\(credits.availableCount - 2) more…") { showingAll = true }
-                            .buttonStyle(.plain)
-                            .font(.caption2).foregroundStyle(.secondary)
-                            .popover(isPresented: $showingAll) {
-                                VStack(alignment: .leading, spacing: 12) {
-                                    HStack {
-                                        Text("Available resets").font(.headline)
-                                        Spacer()
-                                        Button { showingAll = false } label: {
-                                            Image(systemName: "xmark")
-                                        }.buttonStyle(.plain).accessibilityLabel("Close")
-                                    }
-                                    ScrollView {
-                                        VStack(alignment: .leading, spacing: 10) {
-                                            ForEach(sortedCredits) { credit in expirationLabel(credit) }
+                        if credits.availableCount > 2 {
+                            Spacer(minLength: 6)
+                            Button("+\(credits.availableCount - 2) more…") { showingAll = true }
+                                .buttonStyle(.plain)
+                                .fixedSize()
+                                .font(.caption2).foregroundStyle(.secondary)
+                                .popover(isPresented: $showingAll) {
+                                    VStack(alignment: .leading, spacing: 12) {
+                                        HStack {
+                                            Text("Available resets").font(.headline)
+                                            Spacer()
+                                            Button { showingAll = false } label: {
+                                                Image(systemName: "xmark")
+                                            }.buttonStyle(.plain).accessibilityLabel("Close")
                                         }
-                                    }.frame(maxHeight: 220)
-                                    if credits.availableCount > sortedCredits.count {
-                                        Text("Some reset details are unavailable.")
-                                            .font(.caption2).foregroundStyle(.secondary)
-                                    }
-                                }.padding(16).frame(width: 270)
-                            }
+                                        ScrollView {
+                                            VStack(alignment: .leading, spacing: 10) {
+                                                ForEach(sortedCredits) { credit in expirationLabel(credit) }
+                                            }
+                                        }.frame(maxHeight: 220)
+                                        if credits.availableCount > sortedCredits.count {
+                                            Text("Some reset details are unavailable.")
+                                                .font(.caption2).foregroundStyle(.secondary)
+                                        }
+                                    }.padding(16).frame(width: 270)
+                                }
+                        }
                     }
                     if sortedCredits.isEmpty {
                         Text("Details unavailable").font(.caption2).foregroundStyle(.secondary)
