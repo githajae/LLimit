@@ -190,9 +190,16 @@ private struct AccountRowSummary: View {
                 Text("no usage windows")
                     .font(.caption).foregroundStyle(.secondary)
             } else {
-                HStack(spacing: 12) {
-                    ForEach(snap.windows, id: \.label) { w in
-                        MiniWindow(window: w, accent: accent)
+                HStack(spacing: 10) {
+                    HStack(spacing: 12) {
+                        ForEach(snap.windows, id: \.label) { w in
+                            MiniWindow(window: w, accent: accent)
+                        }
+                    }
+                    .frame(maxWidth: .infinity)
+
+                    if account.provider == .codex {
+                        CompactResetCount(credits: snap.resetCredits)
                     }
                 }
             }
@@ -202,6 +209,43 @@ private struct AccountRowSummary: View {
                 .foregroundStyle(.red)
                 .lineLimit(1)
         }
+    }
+}
+
+private struct CompactResetCount: View {
+    let credits: ResetCredits?
+
+    private var label: String {
+        credits.map { "\($0.availableCount)" } ?? "—"
+    }
+
+    private var description: String {
+        credits.map { "\($0.availableCount) resets available" } ?? "Reset count unavailable"
+    }
+
+    var body: some View {
+        HStack(spacing: 5) {
+            Text("Resets")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            Text(label)
+                .font(.system(size: 10, weight: .medium, design: .rounded))
+                .monospacedDigit()
+                .foregroundStyle(credits?.availableCount == 0 ? .tertiary : .secondary)
+                .padding(.horizontal, 5)
+                .padding(.vertical, 2)
+                .background(Color.secondary.opacity(0.08), in: Capsule())
+        }
+        .fixedSize()
+        .padding(.leading, 10)
+        .overlay(alignment: .leading) {
+            Rectangle()
+                .fill(Color.secondary.opacity(0.15))
+                .frame(width: 0.5, height: 20)
+        }
+        .help(description)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(description)
     }
 }
 
