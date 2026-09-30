@@ -454,6 +454,9 @@ struct OpenAIUsageAPI: UsageAPI {
             accountId: auth.accountId
         )
 
+        // A reset-credit lookup failure must not hide valid usage data.
+        let resets = try? await Self.fetchResetCredits(token: auth.accessToken, accountId: auth.accountId)
+
         var windows: [UsageWindow] = []
         if let p = usage.rateLimit?.primaryWindow {
             windows.append(UsageWindow(
@@ -496,7 +499,8 @@ struct OpenAIUsageAPI: UsageAPI {
             note: nil,
             email: usage.email ?? auth.email,
             planLabel: Self.prettyPlan(usage.planType ?? auth.plan).map { "\($0) plan" },
-            organization: nil
+            organization: nil,
+            resetCredits: resets
         )
     }
 
@@ -619,6 +623,21 @@ struct OpenAIUsageAPI: UsageAPI {
             case resetAfterSeconds = "reset_after_seconds"
             case resetAt = "reset_at"
         }
+    }
+
+    private static func fetchResetCredits(token: String, accountId: String) async throws -> ResetCredits {
+        var request = URLRequest(url: URL(string: "https://chatgpt.com/backend-api/wham/rate-limit-reset-credits")!)
+        request.httpMethod = "GET"
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.setValue(accountId, forHTTPHeaderField: "ChatGPT-Account-Id")
+        request.setValue("codex_cli_rs", forHTTPHeaderField: "originator")
+        request.setValue("codex_cli_rs/0.121.0 (LLimit)", forHTTPHeaderField: "User-Agent")
+        request.timeoutInterval = 10
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard (response as? HTTPURLResponse)?.statusCode == 200 else {
+            throw UsageAPIError.parse("Reset credits unavailable")
+        }
+        return try JSONDecoder().decode(ResetCredits.self, from: data)
     }
 
     private static func fetchLiveUsage(token: String, accountId: String) async throws -> UsageResponse {

@@ -14,6 +14,7 @@ struct UsageSnapshot: Codable, Hashable {
     var email: String?
     var planLabel: String?
     var organization: String?
+    var resetCredits: ResetCredits? = nil
 }
 
 enum UsageState {

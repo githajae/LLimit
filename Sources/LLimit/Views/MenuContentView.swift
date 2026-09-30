@@ -135,7 +135,12 @@ private struct AccountRowSummary: View {
             .frame(width: 150, alignment: .leading)
 
             // Inline mini-bars: one column per window, fills remaining space.
-            stateContent
+            VStack(alignment: .leading, spacing: 6) {
+                stateContent
+                if account.provider == .codex, case .loaded(let snap) = state {
+                    ResetCreditsView(credits: snap.resetCredits)
+                }
+            }
 
             Spacer(minLength: 0)
         }
@@ -332,6 +337,7 @@ private struct AccountCardDetailed: View {
                     }
                 }
             }
+            if account.provider == .codex { ResetCreditsView(credits: snap.resetCredits) }
             if let note = snap.note, !note.isEmpty {
                 Text(note)
                     .font(.caption2)
@@ -456,4 +462,48 @@ private func formatRelative(_ date: Date) -> String {
     let d = secs / 86400
     let h = (secs % 86400) / 3600
     return h > 0 ? "\(d)d \(h)h" : "\(d)d"
+}
+
+private struct ResetCreditsView: View {
+    let credits: ResetCredits?
+    @State private var expanded = false
+    private func dateLabel(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "M/d"
+        return formatter.string(from: date)
+    }
+    var body: some View {
+        if let credits {
+            if credits.availableCount == 0 {
+                Label("초기화권 없음", systemImage: "arrow.counterclockwise")
+                    .font(.caption2).foregroundStyle(.secondary)
+            } else {
+                DisclosureGroup(isExpanded: $expanded) {
+                    VStack(alignment: .leading, spacing: 5) {
+                        ForEach(credits.available) { credit in
+                            HStack {
+                                Text(credit.title ?? "사용 한도 초기화")
+                                Spacer(minLength: 4)
+                                Text(credit.expiration.map { "\(dateLabel($0)) 만료" } ?? "만료일 없음")
+                            }
+                        }
+                        if credits.credits == nil { Text("상세 정보 확인 불가") }
+                        Link("사용량 관리 페이지 열기 ↗", destination: URL(string: "https://chatgpt.com/codex/settings/usage")!)
+                        Text("브라우저 계정이 이 계정과 같은지 확인하세요.").foregroundStyle(.secondary)
+                    }.font(.caption2).padding(.top, 4)
+                } label: {
+                    HStack(spacing: 5) {
+                        Label("초기화권 \(credits.availableCount)개", systemImage: "arrow.counterclockwise")
+                        if let date = credits.earliestExpiration {
+                            Text("\(dateLabel(date))부터 만료")
+                                .foregroundStyle(date.timeIntervalSinceNow <= 3 * 86400 ? Color.orange : Color.secondary)
+                        }
+                    }.font(.caption2)
+                }
+            }
+        } else {
+            Label("초기화권 확인 불가", systemImage: "arrow.counterclockwise")
+                .font(.caption2).foregroundStyle(.secondary)
+        }
+    }
 }
