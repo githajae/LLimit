@@ -112,9 +112,12 @@ cat > "$ENTITLEMENTS" <<'PLIST'
 </plist>
 PLIST
 
+# Generated/copied assets may inherit Finder metadata on the build machine.
+# Strip it from the staging bundle before signing the distributable.
+xattr -cr "$APP_DIR"
 echo "==> ad-hoc codesigning (hardened runtime + entitlements)"
 codesign --force --deep --options runtime --entitlements "$ENTITLEMENTS" --sign - "$APP_DIR"
-codesign --verify --verbose=2 "$APP_DIR" || true
+codesign --verify --deep --strict --verbose=2 "$APP_DIR"
 
 if [ "$EMIT_ZIP" = "zip" ]; then
   ZIP_PATH="$OUT_DIR/LLimit-${VERSION}.zip"
