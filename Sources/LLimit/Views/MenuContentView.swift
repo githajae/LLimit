@@ -486,17 +486,15 @@ private struct ResetCreditsView: View {
         return formatter.string(from: date)
     }
 
-    private func creditRow(_ credit: ResetCredits.Credit) -> some View {
-        HStack(spacing: 8) {
-            Text(credit.englishTitle)
-                .lineLimit(1)
-            Spacer(minLength: 0)
-            Text(credit.expiration.map(dateLabel) ?? "No expiry")
-                .monospacedDigit()
-                .foregroundStyle((credit.expiration?.timeIntervalSinceNow ?? .infinity) <= 3 * 86400 ? Color.orange : Color.secondary)
-                .fixedSize()
-                .accessibilityLabel(credit.expiration.map { "Expires \(dateLabel($0))" } ?? "No expiry")
-        }.font(.caption2)
+    private func expirationLabel(_ credit: ResetCredits.Credit) -> some View {
+        let detail = credit.expiration.map { "Expires \(dateLabel($0)) · \(credit.englishTitle)" }
+            ?? "No expiry · \(credit.englishTitle)"
+        return Text(credit.expiration.map(dateLabel) ?? "No expiry")
+            .font(.caption2).monospacedDigit()
+            .foregroundStyle((credit.expiration?.timeIntervalSinceNow ?? .infinity) <= 3 * 86400 ? Color.orange : Color.secondary)
+            .fixedSize()
+            .help(detail)
+            .accessibilityLabel(detail)
     }
 
     var body: some View {
@@ -515,8 +513,14 @@ private struct ResetCreditsView: View {
                 if credits.availableCount == 0 {
                     Text("None available").font(.caption2).foregroundStyle(.secondary)
                 } else {
-                    ForEach(Array(sortedCredits.prefix(2))) { credit in
-                        creditRow(credit)
+                    HStack(spacing: 5) {
+                        ForEach(Array(sortedCredits.prefix(2).enumerated()), id: \.element.id) { index, credit in
+                            if index > 0 {
+                                Text("·").font(.caption2).foregroundStyle(.tertiary)
+                                    .accessibilityHidden(true)
+                            }
+                            expirationLabel(credit)
+                        }
                     }
                     if credits.availableCount > 2 {
                         Button("+\(credits.availableCount - 2) more…") { showingAll = true }
@@ -532,8 +536,8 @@ private struct ResetCreditsView: View {
                                         }.buttonStyle(.plain).accessibilityLabel("Close")
                                     }
                                     ScrollView {
-                                        VStack(spacing: 10) {
-                                            ForEach(sortedCredits) { credit in creditRow(credit) }
+                                        VStack(alignment: .leading, spacing: 10) {
+                                            ForEach(sortedCredits) { credit in expirationLabel(credit) }
                                         }
                                     }.frame(maxHeight: 220)
                                     if credits.availableCount > sortedCredits.count {
