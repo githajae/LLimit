@@ -194,7 +194,7 @@ private struct AccountRowSummary: View {
     }
 
     private var identityWidth: CGFloat {
-        if case .loaded(let snapshot) = state, snapshot.windows.count >= 3 { return 130 }
+        if case .loaded(let snapshot) = state, (account.provider == .claude ? snapshot.claudeSummaryWindows : snapshot.windows).count >= 3 { return 130 }
         return 150
     }
 
@@ -237,10 +237,13 @@ private struct AccountRowSummary: View {
                 Text("no usage windows")
                     .font(.caption).foregroundStyle(.secondary)
             } else {
+                let summaryWindows = account.provider == .claude ? snap.claudeSummaryWindows : snap.windows
                 HStack(spacing: 10) {
                     HStack(spacing: 12) {
-                        ForEach(snap.windows, id: \.label) { w in
-                            MiniWindow(window: w, accent: accent, compact: snap.windows.count >= 3)
+                        ForEach(summaryWindows, id: \.label) { w in
+                            MiniWindow(window: w, accent: accent, compact: summaryWindows.count >= 3)
+                                .help(account.provider == .claude && w.label == "7d"
+                                      ? snap.claudeWeeklyHelp : "Remaining usage · " + w.label.uppercased())
                         }
                     }
                     .frame(maxWidth: .infinity)
