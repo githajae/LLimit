@@ -17,7 +17,7 @@ struct MenuContentView: View {
         }
     }
 
-    @State private var listHeight: CGFloat = 400
+    @State private var listHeight: CGFloat = 1
     @State private var screenHeight: CGFloat = NSScreen.main?.visibleFrame.height ?? 800
     private var maximumListHeight: CGFloat { max(120, min(700, screenHeight - 150)) }
 
@@ -53,25 +53,28 @@ struct MenuContentView: View {
                 .padding(.horizontal, 16)
                 .padding(.vertical, 12)
                 .background(GeometryReader { proxy in
-                    Color.clear.preference(key: AccountListHeight.self, value: proxy.size.height)
+                    Color.clear
+                        .onAppear { listHeight = proxy.size.height }
+                        .onChange(of: proxy.size.height) { _, height in listHeight = height }
                 })
                 }
                 .frame(height: min(listHeight, maximumListHeight))
-                .onPreferenceChange(AccountListHeight.self) { listHeight = $0 }
+
             }
 
             Divider().padding(.horizontal, 16)
             footer
         }
         .frame(width: width)
+        .fixedSize(horizontal: false, vertical: true)
         .background(MenuScreenReader { screenHeight = $0 })
     }
 
     private var header: some View {
         HStack(spacing: 10) {
-            Image(systemName: "gauge.with.dots.needle.50percent")
-                .foregroundStyle(.tint)
-                .font(.title3)
+            Image(nsImage: NSApplication.shared.applicationIconImage)
+                .resizable()
+                .frame(width: 24, height: 24)
             Text("LLimit").font(.headline)
             Spacer()
 
@@ -115,11 +118,6 @@ struct MenuContentView: View {
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
     }
-}
-
-private struct AccountListHeight: PreferenceKey {
-    static var defaultValue: CGFloat = 400
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
 }
 
 private struct MenuScreenReader: NSViewRepresentable {
@@ -242,7 +240,7 @@ private struct AccountRowSummary: View {
                 HStack(spacing: 10) {
                     HStack(spacing: 12) {
                         ForEach(snap.windows, id: \.label) { w in
-                            MiniWindow(window: w, accent: accent)
+                            MiniWindow(window: w, accent: accent, compact: snap.windows.count >= 3)
                         }
                     }
                     .frame(maxWidth: .infinity)
@@ -301,6 +299,7 @@ private struct CompactResetCount: View {
 private struct MiniWindow: View {
     let window: UsageWindow
     let accent: Color
+    var compact = false
 
     private var pct: Double {
         max(0, min(1, window.usedPercent ?? 0))
@@ -320,8 +319,8 @@ private struct MiniWindow: View {
                     .lineLimit(1)
                     .fixedSize(horizontal: true, vertical: false)
                 Spacer(minLength: 2)
-                Text("\(Int(((1 - pct) * 100).rounded()))% left")
-                    .font(.caption.monospacedDigit().weight(.semibold))
+                Text("\(Int(((1 - pct) * 100).rounded()))%" + (compact ? "" : " left"))
+                    .font((compact ? Font.caption2 : Font.caption).monospacedDigit().weight(.semibold))
                     .foregroundStyle(color)
                     .lineLimit(1)
             }
@@ -406,6 +405,10 @@ private struct AccountCardDetailed: View {
             && !ClaudeAuthSource.hasSnapshot(for: account.id)
     }
 
+    private func isWeekly(_ window: UsageWindow) -> Bool {
+        window.label == "7d" || window.label.hasPrefix("Weekly · ")
+    }
+
     @ViewBuilder
     private var content: some View {
         switch state {
@@ -423,8 +426,23 @@ private struct AccountCardDetailed: View {
                         Text("No usage in tracked windows")
                             .font(.caption).foregroundStyle(.secondary)
                     } else {
-                        ForEach(snap.windows, id: \.label) { w in
-                            WindowRow(window: w, accent: accent)
+                        if account.provider == .claude {
+                            ForEach(snap.windows.filter { !isWeekly($0) }, id: \.label) { w in
+                                WindowRow(window: w, accent: accent)
+                            }
+                            let weekly = snap.windows.filter { isWeekly($0) }
+                            if !weekly.isEmpty {
+                                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())],
+                                          alignment: .leading, spacing: 12) {
+                                    ForEach(weekly, id: \.label) { w in
+                                        WindowRow(window: w, accent: accent)
+                                    }
+                                }
+                            }
+                        } else {
+                            ForEach(snap.windows, id: \.label) { w in
+                                WindowRow(window: w, accent: accent)
+                            }
                         }
                     }
                 }

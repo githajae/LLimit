@@ -68,9 +68,9 @@ if [ -f "$ICON_SRC" ]; then
     set -- $spec
     sips -z "$1" "$1" "$ICON_SRC" --out "$ICONSET/$2" >/dev/null
   done
-  iconutil -c icns "$ICONSET" -o "$RES_DIR/LLimit.icns"
+  iconutil -c icns "$ICONSET" -o "$RES_DIR/LLMonogram.icns"
   rm -rf "$ICONSET"
-  ICON_REF="<key>CFBundleIconFile</key><string>LLimit</string>"
+  ICON_REF="<key>CFBundleIconFile</key><string>LLMonogram</string>"
 fi
 
 cat > "$APP_DIR/Contents/Info.plist" <<PLIST
