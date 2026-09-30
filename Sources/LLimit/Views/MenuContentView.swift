@@ -17,6 +17,10 @@ struct MenuContentView: View {
         }
     }
 
+    @State private var listHeight: CGFloat = 400
+    @State private var screenHeight: CGFloat = NSScreen.main?.visibleFrame.height ?? 800
+    private var maximumListHeight: CGFloat { max(120, min(700, screenHeight - 150)) }
+
     private var width: CGFloat { popoverMode == .summary ? 460 : 540 }
 
     var body: some View {
@@ -30,6 +34,7 @@ struct MenuContentView: View {
                     .font(.callout)
                     .padding(16)
             } else {
+                ScrollView(.vertical) {
                 VStack(spacing: 8) {
                     ForEach(store.accounts) { account in
                         if popoverMode == .summary {
@@ -47,12 +52,19 @@ struct MenuContentView: View {
                 }
                 .padding(.horizontal, 16)
                 .padding(.vertical, 12)
+                .background(GeometryReader { proxy in
+                    Color.clear.preference(key: AccountListHeight.self, value: proxy.size.height)
+                })
+                }
+                .frame(height: min(listHeight, maximumListHeight))
+                .onPreferenceChange(AccountListHeight.self) { listHeight = $0 }
             }
 
             Divider().padding(.horizontal, 16)
             footer
         }
         .frame(width: width)
+        .background(MenuScreenReader { screenHeight = $0 })
     }
 
     private var header: some View {
@@ -105,6 +117,38 @@ struct MenuContentView: View {
     }
 }
 
+private struct AccountListHeight: PreferenceKey {
+    static var defaultValue: CGFloat = 400
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
+}
+
+private struct MenuScreenReader: NSViewRepresentable {
+    let update: (CGFloat) -> Void
+    func makeNSView(context: Context) -> ScreenView { ScreenView(update: update) }
+    func updateNSView(_ view: ScreenView, context: Context) { view.reportScreen() }
+
+    final class ScreenView: NSView {
+        let update: (CGFloat) -> Void
+        init(update: @escaping (CGFloat) -> Void) { self.update = update; super.init(frame: .zero) }
+        required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            NotificationCenter.default.removeObserver(self)
+            if let window {
+                NotificationCenter.default.addObserver(self, selector: #selector(reportScreen),
+                    name: NSWindow.didChangeScreenNotification, object: window)
+            }
+            reportScreen()
+        }
+        @objc func reportScreen() {
+            guard let screen = window?.screen else { return }
+            let height = screen.visibleFrame.height
+            DispatchQueue.main.async { [weak self] in self?.update(height) }
+        }
+        deinit { NotificationCenter.default.removeObserver(self) }
+    }
+}
+
 // MARK: - Summary row (one line per account, every window inline)
 
 private struct AccountRowSummary: View {
@@ -132,7 +176,7 @@ private struct AccountRowSummary: View {
                         .truncationMode(.middle)
                 }
             }
-            .frame(width: 150, alignment: .leading)
+            .frame(width: identityWidth, alignment: .leading)
 
             // Inline mini-bars: one column per window, fills remaining space.
             stateContent
@@ -149,6 +193,11 @@ private struct AccountRowSummary: View {
             RoundedRectangle(cornerRadius: 8)
                 .stroke(Color.secondary.opacity(0.15), lineWidth: 0.5)
         )
+    }
+
+    private var identityWidth: CGFloat {
+        if case .loaded(let snapshot) = state, snapshot.windows.count >= 3 { return 130 }
+        return 150
     }
 
     private var providerBadge: some View {
@@ -287,6 +336,8 @@ private struct MiniWindow: View {
     /// redundant `7D` prefix.
     private var shortLabel: String {
         let l = window.label.lowercased()
+        if let name = window.label.components(separatedBy: " · ").last,
+           window.label.hasPrefix("Weekly · ") { return name.uppercased() }
         if l.contains("opus") { return "OPUS" }
         return window.label.uppercased()
     }

@@ -97,29 +97,7 @@ struct AnthropicUsageAPI: UsageAPI {
             }
         }
 
-        if let limits = limitsResult {
-            if let fh = limits.fiveHour {
-                windows.append(UsageWindow(
-                    label: "5h",
-                    usedPercent: fh.usedPercentage / 100.0,
-                    resetsAt: fh.resetsAtDate
-                ))
-            }
-            if let sd = limits.sevenDay {
-                windows.append(UsageWindow(
-                    label: "7d",
-                    usedPercent: sd.usedPercentage / 100.0,
-                    resetsAt: sd.resetsAtDate
-                ))
-            }
-            if let op = limits.sevenDayOpus {
-                windows.append(UsageWindow(
-                    label: "7d opus",
-                    usedPercent: op.usedPercentage / 100.0,
-                    resetsAt: op.resetsAtDate
-                ))
-            }
-        }
+        windows = limitsResult?.windows ?? []
 
         return UsageSnapshot(
             fetchedAt: Date(),
@@ -131,7 +109,7 @@ struct AnthropicUsageAPI: UsageAPI {
         )
     }
 
-    fileprivate struct RateLimit: Codable {
+    struct RateLimit: Codable {
         let utilization: Double
         let resetsAt: String?
         var usedPercentage: Double { utilization }
@@ -149,13 +127,54 @@ struct AnthropicUsageAPI: UsageAPI {
         }
     }
 
-    fileprivate struct RateLimits: Codable {
+    struct RateLimits: Codable {
         let fiveHour: RateLimit?
         let sevenDay: RateLimit?
         let sevenDayOpus: RateLimit?
         let sevenDaySonnet: RateLimit?
+        let limits: [NamedLimit]?
+
+        struct NamedLimit: Codable {
+            let kind: String
+            let percent: Double?
+            let resets_at: String?
+            let scope: Scope?
+            struct Scope: Codable {
+                let model: Model?
+                struct Model: Codable { let display_name: String? }
+            }
+        }
+
+        var windows: [UsageWindow] {
+            var result: [UsageWindow] = []
+            if let limits {
+                for limit in limits {
+                    guard let percent = limit.percent else { continue }
+                    let label: String
+                    switch limit.kind {
+                    case "session": label = "5h"
+                    case "weekly_all": label = "7d"
+                    case "weekly_scoped":
+                        guard let name = limit.scope?.model?.display_name, !name.isEmpty else { continue }
+                        label = "Weekly · \(name)"
+                    default: continue
+                    }
+                    let value = RateLimit(utilization: percent, resetsAt: limit.resets_at)
+                    result.append(UsageWindow(label: label, usedPercent: percent / 100, resetsAt: value.resetsAtDate))
+                }
+            }
+            // Older responses do not include the normalized limits array.
+            for (label, value) in [("5h", fiveHour), ("7d", sevenDay),
+                                   ("Weekly · Opus", sevenDayOpus), ("Weekly · Sonnet", sevenDaySonnet)] {
+                if let value, !result.contains(where: { $0.label == label }) {
+                    result.append(UsageWindow(label: label, usedPercent: value.utilization / 100, resetsAt: value.resetsAtDate))
+                }
+            }
+            return result
+        }
 
         enum CodingKeys: String, CodingKey {
+            case limits
             case fiveHour = "five_hour"
             case sevenDay = "seven_day"
             case sevenDayOpus = "seven_day_opus"
