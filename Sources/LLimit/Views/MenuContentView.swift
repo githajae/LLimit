@@ -324,7 +324,6 @@ private struct AccountCardDetailed: View {
         case .loaded(let snap):
             HStack(alignment: .top, spacing: 16) {
                 VStack(alignment: .leading, spacing: 10) {
-                    Text("Usage").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
                     if snap.windows.isEmpty {
                         Text("No usage in tracked windows")
                             .font(.caption).foregroundStyle(.secondary)
@@ -336,9 +335,12 @@ private struct AccountCardDetailed: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 if account.provider == .codex {
-                    Rectangle().fill(Color.secondary.opacity(0.15)).frame(width: 1, height: 86)
                     ResetCreditsView(credits: snap.resetCredits)
-                        .frame(width: 168, alignment: .leading)
+                        .frame(width: 160, alignment: .leading)
+                        .padding(.leading, 16)
+                        .overlay(alignment: .leading) {
+                            Rectangle().fill(Color.secondary.opacity(0.15)).frame(width: 1)
+                        }
                 }
             }
             if let note = snap.note, !note.isEmpty {
@@ -378,7 +380,7 @@ private struct WindowRow: View {
                 if let resets = window.resetsAt, resets > Date() {
                     Image(systemName: "clock")
                         .font(.system(size: 9))
-                    Text("resets in \(formatRelative(resets))")
+                    Text("Resets in \(formatRelative(resets))")
                         .font(.caption2)
                 }
                 Spacer()
@@ -389,9 +391,9 @@ private struct WindowRow: View {
 
     private var windowTitle: String {
         switch window.label {
-        case "5h": return "5-hour window"
-        case "7d": return "Weekly window"
-        default: return window.label + " window"
+        case "5h": return "5-hour"
+        case "7d": return "Weekly"
+        default: return window.label
         }
     }
 
@@ -469,50 +471,84 @@ private func formatRelative(_ date: Date) -> String {
 
 private struct ResetCreditsView: View {
     let credits: ResetCredits?
-    private let managementURL = URL(string: "https://chatgpt.com/codex/settings/usage")!
+    @State private var showingAll = false
+
+    private var sortedCredits: [ResetCredits.Credit] {
+        (credits?.available ?? []).sorted {
+            ($0.expiration ?? .distantFuture) < ($1.expiration ?? .distantFuture)
+        }
+    }
+
     private func dateLabel(_ date: Date) -> String {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.dateFormat = "MMM d"
         return formatter.string(from: date)
     }
+
+    private func creditRow(_ credit: ResetCredits.Credit) -> some View {
+        HStack(spacing: 8) {
+            Text(credit.englishTitle)
+                .lineLimit(1)
+            Spacer(minLength: 0)
+            Text(credit.expiration.map(dateLabel) ?? "No expiry")
+                .monospacedDigit()
+                .foregroundStyle((credit.expiration?.timeIntervalSinceNow ?? .infinity) <= 3 * 86400 ? Color.orange : Color.secondary)
+                .fixedSize()
+                .accessibilityLabel(credit.expiration.map { "Expires \(dateLabel($0))" } ?? "No expiry")
+        }.font(.caption2)
+    }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text("Resets").font(.caption.weight(.semibold))
-                Spacer()
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 5) {
+                Text("Resets").font(.caption.weight(.medium))
                 if let credits {
-                    Text("\(credits.availableCount) available").font(.caption2)
+                    Text("\(credits.availableCount)")
+                        .font(.system(size: 10, weight: .medium, design: .rounded))
+                        .padding(.horizontal, 5).padding(.vertical, 1)
+                        .background(Color.secondary.opacity(0.10), in: Capsule())
+                        .accessibilityLabel("\(credits.availableCount) resets available")
                 }
             }.foregroundStyle(.secondary)
             if let credits {
                 if credits.availableCount == 0 {
-                    Text("No resets available").font(.caption2).foregroundStyle(.secondary)
+                    Text("None available").font(.caption2).foregroundStyle(.secondary)
                 } else {
-                    let visible = Array(credits.available.sorted {
-                        ($0.expiration ?? .distantFuture) < ($1.expiration ?? .distantFuture)
-                    }.prefix(2))
-                    ForEach(visible) { credit in
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(credit.englishTitle).font(.caption.weight(.medium))
-                            Text(credit.expiration.map { "Expires \(dateLabel($0))" } ?? "No expiry")
-                                .font(.caption2)
-                                .foregroundStyle((credit.expiration?.timeIntervalSinceNow ?? .infinity) <= 3 * 86400 ? Color.orange : Color.secondary)
-                        }
+                    ForEach(Array(sortedCredits.prefix(2))) { credit in
+                        creditRow(credit)
                     }
-                    if credits.availableCount > visible.count {
-                        Link("+\(credits.availableCount - visible.count) more…", destination: managementURL)
-                            .font(.caption2)
+                    if credits.availableCount > 2 {
+                        Button("+\(credits.availableCount - 2) more…") { showingAll = true }
+                            .buttonStyle(.plain)
+                            .font(.caption2).foregroundStyle(.secondary)
+                            .popover(isPresented: $showingAll) {
+                                VStack(alignment: .leading, spacing: 12) {
+                                    HStack {
+                                        Text("Available resets").font(.headline)
+                                        Spacer()
+                                        Button { showingAll = false } label: {
+                                            Image(systemName: "xmark")
+                                        }.buttonStyle(.plain).accessibilityLabel("Close")
+                                    }
+                                    ScrollView {
+                                        VStack(spacing: 10) {
+                                            ForEach(sortedCredits) { credit in creditRow(credit) }
+                                        }
+                                    }.frame(maxHeight: 220)
+                                    if credits.availableCount > sortedCredits.count {
+                                        Text("Some reset details are unavailable.")
+                                            .font(.caption2).foregroundStyle(.secondary)
+                                    }
+                                }.padding(16).frame(width: 270)
+                            }
                     }
-                    if credits.credits == nil {
+                    if sortedCredits.isEmpty {
                         Text("Details unavailable").font(.caption2).foregroundStyle(.secondary)
                     }
                 }
-                Link("Manage ↗", destination: managementURL)
-                    .font(.caption2)
-                    .help("Opens your browser. Check that you are signed in to this account.")
             } else {
-                Text("Unable to check resets").font(.caption2).foregroundStyle(.secondary)
+                Text("Unavailable").font(.caption2).foregroundStyle(.secondary)
             }
         }
     }
