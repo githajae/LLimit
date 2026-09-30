@@ -10,9 +10,17 @@ struct ResetCredits: Codable, Hashable {
         let id: String
         let status: String
         let title: String?
+        var resetType: String? = nil
+        var englishTitle: String {
+            switch resetType {
+            case "codex_rate_limits": return "Full reset"
+            default: return "Usage reset"
+            }
+        }
         let expiresAt: String?
         enum CodingKeys: String, CodingKey {
             case id, status, title
+            case resetType = "reset_type"
             case expiresAt = "expires_at"
         }
         var expiration: Date? {

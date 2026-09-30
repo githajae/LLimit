@@ -9,6 +9,11 @@ final class ResetCreditsTests: XCTestCase {
         XCTAssertNotNil(value.available[0].expiration)
         XCTAssertEqual(value.earliestExpiration, ISO8601DateFormatter().date(from:"2026-10-22T20:25:41Z"))
     }
+    func testLocalizedBackendTitleUsesEnglishResetTypeLabel() throws {
+        let data = Data(#"{"available_count":1,"credits":[{"id":"a","status":"available","title":"전체 재설정","reset_type":"codex_rate_limits"}]}"#.utf8)
+        let value = try JSONDecoder().decode(ResetCredits.self, from: data)
+        XCTAssertEqual(value.available.first?.englishTitle, "Full reset")
+    }
     func testZeroAndUnknownDetailsAreDistinct() throws {
         let decoder = JSONDecoder()
         let zero = try decoder.decode(ResetCredits.self, from: Data(#"{"available_count":0,"credits":[]}"#.utf8))
