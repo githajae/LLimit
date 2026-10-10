@@ -250,7 +250,9 @@ struct LoginSheet: View {
             HStack(spacing: 8) {
                 Image(systemName: "safari")
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Browser opened — sign in there.")
+                    Text(runner.deviceAuthorizationCode == nil
+                        ? "Browser opened — sign in there."
+                        : "Complete sign-in in your browser.")
                         .font(.callout)
                     Button(url.absoluteString) {
                         NSWorkspace.shared.open(url)
@@ -266,6 +268,29 @@ struct LoginSheet: View {
             .background(
                 RoundedRectangle(cornerRadius: 6)
                     .fill(Color.accentColor.opacity(0.10))
+            )
+        }
+
+        if let code = runner.deviceAuthorizationCode {
+            HStack(spacing: 10) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Enter this one-time code")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Text(code)
+                        .font(.system(.title3, design: .monospaced).weight(.semibold))
+                        .textSelection(.enabled)
+                }
+                Spacer()
+                Button("Copy") {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(code, forType: .string)
+                }
+            }
+            .padding(8)
+            .background(
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(Color.secondary.opacity(0.08))
             )
         }
 

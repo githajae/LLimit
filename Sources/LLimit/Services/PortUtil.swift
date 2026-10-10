@@ -4,6 +4,10 @@ import Darwin
 /// Check callback availability without signalling processes or contacting
 /// another login server's /cancel endpoint. Only an owned login may be cancelled.
 enum PortUtil {
+    static func isAvailable(_ port: UInt16) -> Bool {
+        (try? requireAvailable(port)) != nil
+    }
+
     static func requireAvailable(_ port: UInt16) throws {
         let fd = socket(AF_INET, SOCK_STREAM, 0)
         guard fd >= 0 else { throw POSIXError(.EIO) }

@@ -4,7 +4,7 @@ import AppKit
 /// Drives the `claude auth login` / `codex login` flows in-process so the
 /// user never sees a Terminal pop open. We:
 ///   1. resolve the CLI binary
-///   2. (codex only) free port 1455 if a stale callback server still holds it
+///   2. (codex only) use device authorization if callback port 1455 is busy
 ///   3. spawn the CLI with pipes wired to our log buffer
 ///   4. stream every line into `output` and detect the OAuth URL
 ///   5. auto-open the URL in the user's browser
@@ -16,7 +16,13 @@ final class CLILoginRunner: ObservableObject {
     @Published var commandLine: String = ""
     @Published var output: String = ""
     @Published var detectedURL: URL?
+    @Published var deviceAuthorizationCode: String?
     @Published var prompt: String?
+
+    struct DeviceAuthorizationDetails: Equatable {
+        let url: URL
+        let code: String
+    }
 
     enum Status: Equatable {
         case idle
@@ -29,6 +35,7 @@ final class CLILoginRunner: ObservableObject {
     private var stdinHandle: FileHandle?
     private var currentProvider: Provider?
     private var currentAccountId: UUID?
+    private var usesDeviceAuthorization = false
 
     func launch(account: Account) {
         cancel()
@@ -37,7 +44,12 @@ final class CLILoginRunner: ObservableObject {
         // Announce login-in-progress so RefreshCoordinator won't read half-
         // written auth.json during the CLI's browser handoff.
         Task { await LoginGate.shared.enter(account.id) }
-        let (binary, args, envKey) = command(for: account.provider)
+        let callbackPortAvailable = account.provider != .codex || PortUtil.isAvailable(1455)
+        let (binary, args, envKey) = command(
+            for: account.provider,
+            callbackPortAvailable: callbackPortAvailable
+        )
+        usesDeviceAuthorization = account.provider == .codex && !callbackPortAvailable
         guard let binPath = Self.resolveBinary(binary) else {
             status = .failed("\(binary) not found in PATH")
             return
@@ -56,21 +68,12 @@ final class CLILoginRunner: ObservableObject {
             withIntermediateDirectories: true
         )
 
-        // Never terminate an unrelated process to claim the callback port.
-        // The Codex CLI can also cancel a previous login server on conflict,
-        // so refuse to launch while another flow already owns the port.
-        if account.provider == .codex {
-            do { try PortUtil.requireAvailable(1455) }
-            catch {
-                status = .failed(error.localizedDescription)
-                Task { await LoginGate.shared.leave(account.id) }
-                return
-            }
-        }
-
         commandLine = "\(envKey)=\(account.authenticationDirectory) \(binPath) \(args.joined(separator: " "))"
-        output = ""
+        output = usesDeviceAuthorization
+            ? "Port 1455 is busy; using Codex device authorization instead.\n"
+            : ""
         detectedURL = nil
+        deviceAuthorizationCode = nil
         prompt = nil
 
         // The Codex login CLI only starts its localhost:1455 callback server
@@ -163,7 +166,15 @@ final class CLILoginRunner: ObservableObject {
             output = String(output.suffix(8_192))
         }
 
-        if detectedURL == nil, let url = Self.firstURL(in: chunk) {
+        if usesDeviceAuthorization,
+           let details = Self.deviceAuthorizationDetails(in: output) {
+            let shouldOpen = detectedURL == nil
+            detectedURL = details.url
+            deviceAuthorizationCode = details.code
+            if shouldOpen {
+                NSWorkspace.shared.open(details.url)
+            }
+        } else if detectedURL == nil, let url = Self.firstURL(in: chunk) {
             detectedURL = url
             // Both `claude auth login` and `codex login` auto-open the
             // browser themselves. Calling NSWorkspace.shared.open here too
@@ -192,12 +203,40 @@ final class CLILoginRunner: ObservableObject {
         return url
     }
 
-    private func command(for provider: Provider) -> (String, [String], String) {
+    static func codexLoginArguments(callbackPortAvailable: Bool) -> [String] {
+        var arguments = ["-c", "cli_auth_credentials_store=\"file\"", "login"]
+        if !callbackPortAvailable {
+            arguments.append("--device-auth")
+        }
+        return arguments
+    }
+
+    static func deviceAuthorizationDetails(in text: String) -> DeviceAuthorizationDetails? {
+        let plain = text.replacingOccurrences(
+            of: "\u{001B}\\[[0-9;]*m",
+            with: "",
+            options: .regularExpression
+        )
+        guard plain.localizedCaseInsensitiveContains("one-time code"),
+              let url = firstURL(in: plain) else {
+            return nil
+        }
+        let codePattern = #"\b[A-Z0-9]{4,8}-[A-Z0-9]{4,8}\b"#
+        guard let codeRange = plain.range(of: codePattern, options: .regularExpression) else {
+            return nil
+        }
+        return DeviceAuthorizationDetails(url: url, code: String(plain[codeRange]))
+    }
+
+    private func command(
+        for provider: Provider,
+        callbackPortAvailable: Bool
+    ) -> (String, [String], String) {
         switch provider {
         case .claude:
             return ("claude", ["auth", "login"], "CLAUDE_CONFIG_DIR")
         case .codex:
-            return ("codex", ["-c", "cli_auth_credentials_store=\"file\"", "login"], "CODEX_HOME")
+            return ("codex", Self.codexLoginArguments(callbackPortAvailable: callbackPortAvailable), "CODEX_HOME")
         }
     }
 
