@@ -248,7 +248,7 @@ private struct AccountRowSummary: View {
                     }
                     .frame(maxWidth: .infinity)
 
-                    if account.provider == .codex {
+                    if account.provider == .codex || account.provider == .claude {
                         CompactResetCount(credits: snap.resetCredits)
                     }
                 }
@@ -450,15 +450,17 @@ private struct AccountCardDetailed: View {
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                if account.provider == .codex {
+                if account.provider == .codex || account.provider == .claude {
                     ResetCreditsView(credits: snap.resetCredits)
                         .frame(width: 160, alignment: .leading)
+                        .frame(maxHeight: .infinity, alignment: .leading)
                         .padding(.leading, 16)
                         .overlay(alignment: .leading) {
                             Rectangle().fill(Color.secondary.opacity(0.15)).frame(width: 1)
                         }
                 }
             }
+            .fixedSize(horizontal: false, vertical: true)
             if let note = snap.note, !note.isEmpty {
                 Text(note)
                     .font(.caption2)

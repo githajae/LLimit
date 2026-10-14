@@ -105,7 +105,8 @@ struct AnthropicUsageAPI: UsageAPI {
             note: nil,
             email: profileEmail,
             planLabel: profilePlan,
-            organization: profileOrg
+            organization: profileOrg,
+            resetCredits: limitsResult?.cedarEmber?.resetCredits()
         )
     }
 
@@ -133,6 +134,18 @@ struct AnthropicUsageAPI: UsageAPI {
         let sevenDayOpus: RateLimit?
         let sevenDaySonnet: RateLimit?
         let limits: [NamedLimit]?
+        let cedarEmber: ClaudeResetStatus?
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            fiveHour = try c.decodeIfPresent(RateLimit.self, forKey: .fiveHour)
+            sevenDay = try c.decodeIfPresent(RateLimit.self, forKey: .sevenDay)
+            sevenDayOpus = try c.decodeIfPresent(RateLimit.self, forKey: .sevenDayOpus)
+            sevenDaySonnet = try c.decodeIfPresent(RateLimit.self, forKey: .sevenDaySonnet)
+            limits = try c.decodeIfPresent([NamedLimit].self, forKey: .limits)
+            // An undocumented reset schema must never break the usage bars.
+            cedarEmber = try? c.decodeIfPresent(ClaudeResetStatus.self, forKey: .cedarEmber)
+        }
 
         struct NamedLimit: Codable {
             let kind: String
@@ -175,6 +188,7 @@ struct AnthropicUsageAPI: UsageAPI {
 
         enum CodingKeys: String, CodingKey {
             case limits
+            case cedarEmber = "cedar_ember"
             case fiveHour = "five_hour"
             case sevenDay = "seven_day"
             case sevenDayOpus = "seven_day_opus"
@@ -246,12 +260,13 @@ struct AnthropicUsageAPI: UsageAPI {
     }
 
     private static func sendRateLimitsRequest(token: String) async throws -> RateLimits {
-        var req = URLRequest(url: URL(string: "https://api.anthropic.com/api/oauth/usage")!)
+        var req = URLRequest(url: URL(string: "https://api.anthropic.com/api/oauth/usage?cedar_ember=1")!)
         req.httpMethod = "GET"
         req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         req.setValue("oauth-2025-04-20", forHTTPHeaderField: "anthropic-beta")
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        req.setValue("claude-code/2.1.112 (LLimit)", forHTTPHeaderField: "User-Agent")
+        // The reset API selects its surface using the CLI User-Agent format.
+        req.setValue("claude-cli/2.1.282 (external, cli)", forHTTPHeaderField: "User-Agent")
         req.timeoutInterval = 10
         let (data, resp) = try await URLSession.shared.data(for: req)
         let status = (resp as? HTTPURLResponse)?.statusCode ?? -1
