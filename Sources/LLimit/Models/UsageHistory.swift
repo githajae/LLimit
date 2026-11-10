@@ -139,6 +139,24 @@ struct UsageHistory {
             .sorted { ($0.start, seriesIndex($0.series)) < ($1.start, seriesIndex($1.series)) }
     }
 
+    /// Starts and ends of the logged weekly windows, each snapped to the
+    /// nearest local midnight, strictly inside `range`. A Friday 23:00
+    /// reset becomes the midnight that ends Friday.
+    func weekBoundaries(in range: ClosedRange<Date>, calendar: Calendar = .current) -> [Date] {
+        var ends = Set<Date>()
+        for point in points(for: "Weekly") {
+            guard let end = point.resetsAt else { continue }
+            ends.insert(Date(timeIntervalSince1970: (end.timeIntervalSince1970 / 3600).rounded() * 3600))
+        }
+        let edges = ends.flatMap { [$0, $0.addingTimeInterval(-Self.weekLength)] }
+        let snapped = edges.map { date -> Date in
+            let previous = calendar.startOfDay(for: date)
+            let next = calendar.date(byAdding: .day, value: 1, to: previous) ?? previous
+            return date.timeIntervalSince(previous) < next.timeIntervalSince(date) ? previous : next
+        }
+        return Set(snapped).filter { $0 > range.lowerBound && $0 < range.upperBound }.sorted()
+    }
+
     private func seriesIndex(_ name: String) -> Int {
         series.firstIndex(of: name) ?? series.count
     }

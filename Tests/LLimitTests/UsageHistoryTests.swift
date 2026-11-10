@@ -64,6 +64,21 @@ final class UsageHistoryTests: XCTestCase {
         XCTAssertEqual(history.trend(in: history.currentWindow()).map(\.used), [3, 10])
     }
 
+    func testWeekBoundariesSnapToNearestMidnight() {
+        var seoul = Calendar(identifier: .gregorian)
+        seoul.timeZone = TimeZone(identifier: "Asia/Seoul")!
+        // Resets at 14:00 UTC = Friday 23:00 in Seoul.
+        let records = [
+            record("2026-11-05T00:00:00Z", weekly: 50, resets: "2026-11-06T13:59:59Z"),
+            record("2026-11-10T00:00:00Z", weekly: 10, resets: "2026-11-13T14:00:01Z"),
+        ]
+        let history = UsageHistory(records: records, accountID: account)
+        let range = date("2026-10-28T15:00:00Z")...date("2026-11-10T15:00:00Z")
+        // Saturday 00:00 in Seoul, i.e. the midnight that ends Friday.
+        XCTAssertEqual(history.weekBoundaries(in: range, calendar: seoul),
+                       [date("2026-10-30T15:00:00Z"), date("2026-11-06T15:00:00Z")])
+    }
+
     func testScopedWindowJitterStaysInTheSameWeek() {
         let records = [
             record("2026-11-10T00:00:00Z", weekly: 10, fable: 1, resets: "2026-11-13T14:00:00Z"),

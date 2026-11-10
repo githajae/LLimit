@@ -160,11 +160,12 @@ private struct AccountDashboard: View {
                     }
                     DashboardSection(
                         title: "Daily usage",
-                        subtitle: "Last \(dailyDays) days · % of each weekly limit used that day · dashed line is 1/7 of the weekly limit"
+                        subtitle: "Last \(dailyDays) days · % of each weekly limit used that day · dashed line is 1/7 of the weekly limit · solid lines mark weekly resets"
                     ) {
                         let daily = history.daily(days: dailyDays)
                         let shown = present(daily.map(\.series))
-                        DailyChart(buckets: daily, series: shown.series, colors: shown.colors, days: dailyDays)
+                        DailyChart(buckets: daily, series: shown.series, colors: shown.colors, days: dailyDays,
+                                   boundaries: history.weekBoundaries(in: DailyChart.range(days: dailyDays)))
                     }
                     DashboardSection(
                         title: "Weekly usage",
@@ -337,14 +338,25 @@ private struct DailyChart: View {
     let series: [String]
     let colors: [Color]
     let days: Int
+    /// Weekly resets snapped to midnight; drawn between day bars.
+    let boundaries: [Date]
     @State private var selected: Date?
 
-    private var range: ClosedRange<Date> {
+    static func range(days: Int, now: Date = Date()) -> ClosedRange<Date> {
         let calendar = Calendar.current
-        let today = calendar.startOfDay(for: Date())
+        let today = calendar.startOfDay(for: now)
         let first = calendar.date(byAdding: .day, value: -(days - 1), to: today) ?? today
         let end = calendar.date(byAdding: .day, value: 1, to: today) ?? today
         return first...end
+    }
+
+    private var range: ClosedRange<Date> { Self.range(days: days) }
+
+    private func labelsDay(_ date: Date) -> Bool {
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: Date())
+        let offset = calendar.dateComponents([.day], from: calendar.startOfDay(for: date), to: today).day ?? -1
+        return offset >= 0 && offset % 2 == 0
     }
 
     var body: some View {
@@ -365,6 +377,16 @@ private struct DailyChart: View {
                         .accessibilityLabel("\(bucket.series) \(bucket.start.formatted(date: .abbreviated, time: .omitted))")
                         .accessibilityValue("\(Int(bucket.used.rounded())) percent of limit")
                 }
+                ForEach(boundaries, id: \.self) { boundary in
+                    RuleMark(x: .value("Reset", boundary))
+                        .foregroundStyle(Color.secondary.opacity(0.55))
+                        .lineStyle(StrokeStyle(lineWidth: 1))
+                        .annotation(position: .top, alignment: .center, spacing: 2) {
+                            Text("reset")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                }
                 // An even share of the weekly limit per day; bars above it
                 // used more than a day's worth.
                 RuleMark(y: .value("Daily share", Self.dailyShare))
@@ -379,8 +401,16 @@ private struct DailyChart: View {
             .chartForegroundStyleScale(domain: series, range: colors)
             .chartXScale(domain: range)
             .chartXAxis {
-                AxisMarks(values: .stride(by: .day, count: 2)) { _ in
-                    AxisValueLabel(format: .dateTime.month(.abbreviated).day(), centered: true).font(.callout)
+                // A mark on every day keeps each centered label under its own
+                // day's bars; every other day shows text, ending on today.
+                AxisMarks(values: .stride(by: .day)) { value in
+                    AxisValueLabel(centered: true) {
+                        if let date = value.as(Date.self), labelsDay(date) {
+                            Text(date, format: .dateTime.month(.abbreviated).day()).font(.callout)
+                        } else {
+                            Text(" ").font(.callout)
+                        }
+                    }
                 }
             }
             .chartYAxis {
