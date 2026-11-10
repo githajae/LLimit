@@ -160,7 +160,7 @@ private struct AccountDashboard: View {
                     }
                     DashboardSection(
                         title: "Daily usage",
-                        subtitle: "Last \(dailyDays) days · % of each weekly limit used that day"
+                        subtitle: "Last \(dailyDays) days · % of each weekly limit used that day · dashed line is 1/7 of the weekly limit"
                     ) {
                         let daily = history.daily(days: dailyDays)
                         let shown = present(daily.map(\.series))
@@ -332,6 +332,7 @@ private struct TrendChart: View {
 }
 
 private struct DailyChart: View {
+    static let dailyShare = 100.0 / 7
     let buckets: [UsageHistory.Bucket]
     let series: [String]
     let colors: [Color]
@@ -353,15 +354,27 @@ private struct DailyChart: View {
                 title: selectedDay.map { $0.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day()) },
                 rows: selectedDay.map { day in rows(buckets.filter { $0.start == day }) } ?? []
             )
-            Chart(buckets) { bucket in
-                BarMark(x: .value("Day", bucket.start, unit: .day), y: .value("Used", bucket.used), width: .fixed(12))
-                    .foregroundStyle(by: .value("Limit", bucket.series))
-                    // Bars of one day sit 2pt apart.
-                    .position(by: .value("Limit", bucket.series), span: .fixed(CGFloat(14 * max(1, series.count))))
-                    .cornerRadius(4)
-                    .opacity(selectedDay == nil || selectedDay == bucket.start ? 1 : 0.35)
-                    .accessibilityLabel("\(bucket.series) \(bucket.start.formatted(date: .abbreviated, time: .omitted))")
-                    .accessibilityValue("\(Int(bucket.used.rounded())) percent of limit")
+            Chart {
+                ForEach(buckets) { bucket in
+                    BarMark(x: .value("Day", bucket.start, unit: .day), y: .value("Used", bucket.used), width: .fixed(12))
+                        .foregroundStyle(by: .value("Limit", bucket.series))
+                        // Bars of one day sit 2pt apart.
+                        .position(by: .value("Limit", bucket.series), span: .fixed(CGFloat(14 * max(1, series.count))))
+                        .cornerRadius(4)
+                        .opacity(selectedDay == nil || selectedDay == bucket.start ? 1 : 0.35)
+                        .accessibilityLabel("\(bucket.series) \(bucket.start.formatted(date: .abbreviated, time: .omitted))")
+                        .accessibilityValue("\(Int(bucket.used.rounded())) percent of limit")
+                }
+                // An even share of the weekly limit per day; bars above it
+                // used more than a day's worth.
+                RuleMark(y: .value("Daily share", Self.dailyShare))
+                    .foregroundStyle(Color.secondary.opacity(0.7))
+                    .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 4]))
+                    .annotation(position: .top, alignment: .leading, spacing: 2) {
+                        Text("1/7 of weekly · \(Self.dailyShare.formatted(.number.precision(.fractionLength(1))))%")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
             }
             .chartForegroundStyleScale(domain: series, range: colors)
             .chartXScale(domain: range)
