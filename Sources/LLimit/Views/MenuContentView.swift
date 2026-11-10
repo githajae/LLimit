@@ -1,6 +1,18 @@
 import SwiftUI
 import AppKit
 
+/// The popover is drawn 30% larger than upstream: every font size, bar,
+/// ring, padding and width below goes through `S` / `Font.ll`.
+private let uiScale: CGFloat = 1.3
+private func S(_ value: CGFloat) -> CGFloat { value * uiScale }
+
+private extension Font {
+    /// System font at a macOS text-style point size, scaled by `uiScale`.
+    static func ll(_ size: CGFloat, _ weight: Font.Weight = .regular, design: Font.Design = .default) -> Font {
+        .system(size: S(size), weight: weight, design: design)
+    }
+}
+
 struct MenuContentView: View {
     @EnvironmentObject var store: AccountStore
     @EnvironmentObject var refresher: RefreshCoordinator
@@ -19,25 +31,25 @@ struct MenuContentView: View {
 
     @State private var listHeight: CGFloat = 1
     @State private var screenHeight: CGFloat = NSScreen.main?.visibleFrame.height ?? 800
-    private var maximumListHeight: CGFloat { max(120, min(700, screenHeight - 150)) }
+    private var maximumListHeight: CGFloat { max(S(120), min(S(700), screenHeight - 150)) }
 
     /// Summary is a little wider than upstream so a Claude row with 5h,
     /// weekly and a model-scoped limit still fits beside the reset counter.
-    private var width: CGFloat { popoverMode == .summary ? 500 : 540 }
+    private var width: CGFloat { S(popoverMode == .summary ? 500 : 540) }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
+        VStack(alignment: .leading, spacing: S(0)) {
             header
-            Divider().padding(.horizontal, 16)
+            Divider().padding(.horizontal, S(16))
 
             if store.accounts.isEmpty {
                 Text("No accounts. Open Settings to add one.")
                     .foregroundStyle(.secondary)
-                    .font(.callout)
-                    .padding(16)
+                    .font(.ll(12))
+                    .padding(S(16))
             } else {
                 ScrollView(.vertical) {
-                VStack(spacing: 8) {
+                VStack(spacing: S(8)) {
                     ForEach(store.accounts) { account in
                         if popoverMode == .summary {
                             AccountRowSummary(
@@ -53,8 +65,8 @@ struct MenuContentView: View {
                     }
                 }
                 .modifier(AlignedResetColumns())
-                .padding(.horizontal, 16)
-                .padding(.vertical, 12)
+                .padding(.horizontal, S(16))
+                .padding(.vertical, S(12))
                 .background(GeometryReader { proxy in
                     Color.clear
                         .onAppear { listHeight = proxy.size.height }
@@ -65,7 +77,7 @@ struct MenuContentView: View {
 
             }
 
-            Divider().padding(.horizontal, 16)
+            Divider().padding(.horizontal, S(16))
             footer
         }
         .frame(width: width)
@@ -74,11 +86,11 @@ struct MenuContentView: View {
     }
 
     private var header: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: S(10)) {
             Image(nsImage: NSApplication.shared.applicationIconImage)
                 .resizable()
-                .frame(width: 24, height: 24)
-            Text("LLimit").font(.headline)
+                .frame(width: S(24), height: S(24))
+            Text("LLimit").font(.ll(13, .bold))
             Spacer()
 
             Picker("", selection: $popoverMode) {
@@ -88,22 +100,22 @@ struct MenuContentView: View {
             }
             .pickerStyle(.segmented)
             .labelsHidden()
-            .frame(width: 80)
+            .frame(width: S(80))
 
             if let date = refresher.lastRefreshedAt {
                 Text(date, style: .relative)
-                    .font(.caption2)
+                    .font(.ll(10, .medium))
                     .foregroundStyle(.secondary)
                     .monospacedDigit()
             }
         }
-        .padding(.horizontal, 16)
-        .padding(.top, 14)
-        .padding(.bottom, 12)
+        .padding(.horizontal, S(16))
+        .padding(.top, S(14))
+        .padding(.bottom, S(12))
     }
 
     private var footer: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: S(12)) {
             Button {
                 Task { await refresher.refreshAll() }
             } label: {
@@ -118,8 +130,8 @@ struct MenuContentView: View {
         }
         .controlSize(.small)
         .buttonStyle(.borderless)
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
+        .padding(.horizontal, S(16))
+        .padding(.vertical, S(10))
     }
 }
 
@@ -157,21 +169,21 @@ private struct AccountRowSummary: View {
     let state: UsageState
 
     var body: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: S(10)) {
             providerBadge
 
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: S(2)) {
                 Text(account.name)
-                    .font(.subheadline.weight(.semibold))
+                    .font(.ll(11, .semibold))
                     .lineLimit(1)
                 if needsLoginToSeparate {
                     Text("sign in to separate accounts")
-                        .font(.caption2)
+                        .font(.ll(10, .medium))
                         .foregroundStyle(.orange)
                         .lineLimit(1)
                 } else if let id = identityLine {
                     Text(id)
-                        .font(.caption2)
+                        .font(.ll(10, .medium))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                         .truncationMode(.middle)
@@ -182,31 +194,31 @@ private struct AccountRowSummary: View {
             // Inline mini-bars: one column per window, fills remaining space.
             stateContent
 
-            Spacer(minLength: 0)
+            Spacer(minLength: S(0))
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 10)
+        .padding(.horizontal, S(12))
+        .padding(.vertical, S(10))
         .background(
-            RoundedRectangle(cornerRadius: 8)
+            RoundedRectangle(cornerRadius: S(8))
                 .fill(Color(NSColor.controlBackgroundColor))
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 8)
-                .stroke(Color.secondary.opacity(0.15), lineWidth: 0.5)
+            RoundedRectangle(cornerRadius: S(8))
+                .stroke(Color.secondary.opacity(0.15), lineWidth: S(0.5))
         )
     }
 
     private var identityWidth: CGFloat {
-        guard case .loaded(let snapshot) = state else { return 150 }
+        guard case .loaded(let snapshot) = state else { return S(150) }
         switch columnCount(snapshot) {
-        case 4...: return 110
-        case 3: return 130
-        default: return 150
+        case 4...: return S(110)
+        case 3: return S(130)
+        default: return S(150)
         }
     }
 
     private var providerBadge: some View {
-        ProviderBadge(provider: account.provider, size: 22)
+        ProviderBadge(provider: account.provider, size: S(22))
     }
 
     private var showsResets: Bool {
@@ -243,19 +255,19 @@ private struct AccountRowSummary: View {
     private var stateContent: some View {
         switch state {
         case .idle:
-            Text("—").font(.caption).foregroundStyle(.secondary)
+            Text("—").font(.ll(10)).foregroundStyle(.secondary)
         case .loading:
-            HStack(spacing: 6) {
+            HStack(spacing: S(6)) {
                 ProgressView().controlSize(.small)
-                Text("loading…").font(.caption).foregroundStyle(.secondary)
+                Text("loading…").font(.ll(10)).foregroundStyle(.secondary)
             }
         case .loaded(let snap):
             if snap.windows.isEmpty {
                 Text("no usage windows")
-                    .font(.caption).foregroundStyle(.secondary)
+                    .font(.ll(10)).foregroundStyle(.secondary)
             } else {
-                HStack(spacing: 10) {
-                    HStack(spacing: 12) {
+                HStack(spacing: S(10)) {
+                    HStack(spacing: S(12)) {
                         ForEach(snap.windows, id: \.label) { w in
                             MiniWindow(window: w, accent: accent, compact: columnCount(snap) >= 3)
                                 .help(summaryHelp(for: w, note: snap.note))
@@ -270,7 +282,7 @@ private struct AccountRowSummary: View {
             }
         case .error(let msg):
             Label(msg, systemImage: "exclamationmark.triangle.fill")
-                .font(.caption)
+                .font(.ll(10))
                 .foregroundStyle(.red)
                 .lineLimit(1)
         }
@@ -301,30 +313,30 @@ private struct CompactResetCount: View {
     }
 
     var body: some View {
-        HStack(spacing: 5) {
+        HStack(spacing: S(5)) {
             if iconOnly {
                 Image(systemName: "arrow.counterclockwise")
-                    .font(.system(size: 9, weight: .semibold))
+                    .font(.ll(9, .semibold))
                     .foregroundStyle(.secondary)
             } else {
                 Text("Resets")
-                    .font(.caption2)
+                    .font(.ll(10, .medium))
                     .foregroundStyle(.secondary)
             }
             Text(label)
-                .font(.system(size: 10, weight: .medium, design: .rounded))
+                .font(.ll(10, .medium, design: .rounded))
                 .monospacedDigit()
                 .foregroundStyle(credits?.availableCount == 0 ? .tertiary : .secondary)
-                .padding(.horizontal, 5)
-                .padding(.vertical, 2)
+                .padding(.horizontal, S(5))
+                .padding(.vertical, S(2))
                 .background(Color.secondary.opacity(0.08), in: Capsule())
         }
         .fixedSize()
-        .padding(.leading, 10)
+        .padding(.leading, S(10))
         .overlay(alignment: .leading) {
             Rectangle()
                 .fill(Color.secondary.opacity(0.15))
-                .frame(width: 0.5, height: 20)
+                .frame(width: S(0.5), height: S(20))
         }
         .help(description)
         .accessibilityElement(children: .ignore)
@@ -347,23 +359,23 @@ private struct MiniWindow: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 3) {
-            HStack(spacing: 4) {
+        VStack(alignment: .leading, spacing: S(3)) {
+            HStack(spacing: S(4)) {
                 Text(shortLabel)
-                    .font(.caption2.weight(.semibold))
+                    .font(.ll(10, .semibold))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                     .fixedSize(horizontal: true, vertical: false)
-                Spacer(minLength: 2)
+                Spacer(minLength: S(2))
                 Text("\(Int(((1 - pct) * 100).rounded()))%" + (compact ? "" : " left"))
-                    .font((compact ? Font.caption2 : Font.caption).monospacedDigit().weight(.semibold))
+                    .font(Font.ll(10, .semibold).monospacedDigit())
                     .foregroundStyle(color)
                     .lineLimit(1)
             }
             UsageBar(progress: pct, color: color)
-                .frame(height: 5)
+                .frame(height: S(5))
         }
-        .frame(minWidth: 64, idealWidth: 90)
+        .frame(minWidth: S(64), idealWidth: S(90))
     }
 
     /// Compact, fixed-width-ish labels so 4 windows fit on one row even on
@@ -385,20 +397,20 @@ private struct AccountCardDetailed: View {
     @Environment(\.resetColumnWidth) private var resetColumnWidth
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 8) {
-                ProviderBadge(provider: account.provider, size: 22)
-                VStack(alignment: .leading, spacing: 1) {
+        VStack(alignment: .leading, spacing: S(12)) {
+            HStack(spacing: S(8)) {
+                ProviderBadge(provider: account.provider, size: S(22))
+                VStack(alignment: .leading, spacing: S(1)) {
                     Text(account.name)
-                        .font(.subheadline.weight(.semibold))
+                        .font(.ll(11, .semibold))
                     if needsLoginToSeparate {
                         Text("sign in to separate accounts")
-                            .font(.caption2)
+                            .font(.ll(10, .medium))
                             .foregroundStyle(.orange)
                             .lineLimit(1)
                     } else if let identity = identityLine {
                         Text(identity)
-                            .font(.caption2)
+                            .font(.ll(10, .medium))
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
                             .truncationMode(.middle)
@@ -406,21 +418,21 @@ private struct AccountCardDetailed: View {
                 }
                 Spacer()
                 Text(account.provider.displayName.uppercased())
-                    .font(.caption2.weight(.semibold))
+                    .font(.ll(10, .semibold))
                     .foregroundStyle(.secondary)
                     .tracking(0.5)
             }
 
             content
         }
-        .padding(14)
+        .padding(S(14))
         .background(
-            RoundedRectangle(cornerRadius: 8)
+            RoundedRectangle(cornerRadius: S(8))
                 .fill(Color(NSColor.controlBackgroundColor))
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 8)
-                .stroke(Color.secondary.opacity(0.15), lineWidth: 0.5)
+            RoundedRectangle(cornerRadius: S(8))
+                .stroke(Color.secondary.opacity(0.15), lineWidth: S(0.5))
         )
     }
 
@@ -445,18 +457,18 @@ private struct AccountCardDetailed: View {
     private var content: some View {
         switch state {
         case .idle:
-            Text("—").font(.caption).foregroundStyle(.secondary)
+            Text("—").font(.ll(10)).foregroundStyle(.secondary)
         case .loading:
-            HStack(spacing: 6) {
+            HStack(spacing: S(6)) {
                 ProgressView().controlSize(.small)
-                Text("loading…").font(.caption).foregroundStyle(.secondary)
+                Text("loading…").font(.ll(10)).foregroundStyle(.secondary)
             }
         case .loaded(let snap):
-            HStack(alignment: .top, spacing: 16) {
-                VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .top, spacing: S(16)) {
+                VStack(alignment: .leading, spacing: S(10)) {
                     if snap.windows.isEmpty {
                         Text("No usage in tracked windows")
-                            .font(.caption).foregroundStyle(.secondary)
+                            .font(.ll(10)).foregroundStyle(.secondary)
                     } else {
                         ForEach(snap.windows, id: \.label) { w in
                             WindowRow(window: w, accent: accent)
@@ -472,23 +484,23 @@ private struct AccountCardDetailed: View {
                         })
                         .frame(width: resetColumnWidth, alignment: .leading)
                         .frame(maxHeight: .infinity, alignment: .leading)
-                        .padding(.leading, 12)
+                        .padding(.leading, S(12))
                         .overlay(alignment: .leading) {
-                            Rectangle().fill(Color.secondary.opacity(0.15)).frame(width: 1)
+                            Rectangle().fill(Color.secondary.opacity(0.15)).frame(width: S(1))
                         }
                 }
             }
             .fixedSize(horizontal: false, vertical: true)
             if let note = snap.note, !note.isEmpty {
                 Text(note)
-                    .font(.caption2)
+                    .font(.ll(10, .medium))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                     .truncationMode(.middle)
             }
         case .error(let msg):
             Label(msg, systemImage: "exclamationmark.triangle.fill")
-                .font(.caption)
+                .font(.ll(10))
                 .foregroundStyle(.red)
                 .lineLimit(2)
         }
@@ -501,26 +513,26 @@ private struct WindowRow: View {
 
     var body: some View {
         TimelineView(.periodic(from: .now, by: 60)) { context in
-            HStack(spacing: 12) {
-                VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: S(12)) {
+                VStack(alignment: .leading, spacing: S(4)) {
                     HStack(alignment: .firstTextBaseline) {
                         Text(windowTitle)
-                            .font(.caption.weight(.medium))
+                            .font(.ll(10, .medium))
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
                         Spacer()
                         Text(rightText)
-                            .font(.caption.monospacedDigit().weight(.semibold))
+                            .font(Font.ll(10, .semibold).monospacedDigit())
                             .foregroundStyle(barColor)
                     }
                     UsageBar(progress: progress, color: barColor)
-                        .frame(height: 6)
+                        .frame(height: S(6))
                     HStack {
                         if let resets = window.resetsAt, resets > context.date {
                             Image(systemName: "clock")
-                                .font(.system(size: 9))
+                                .font(.ll(9))
                             Text("Resets in \(formatRelative(resets))")
-                                .font(.caption2)
+                                .font(.ll(10, .medium))
                         }
                         Spacer()
                     }
@@ -603,14 +615,14 @@ private struct ResetProgressRing: View {
     var body: some View {
         ZStack {
             Circle()
-                .stroke(Color.secondary.opacity(0.18), lineWidth: 4)
+                .stroke(Color.secondary.opacity(0.18), lineWidth: S(4))
             Circle()
                 .trim(from: 0, to: progress)
                 .stroke(Color.secondary.opacity(0.75),
-                        style: StrokeStyle(lineWidth: 4, lineCap: .round))
+                        style: StrokeStyle(lineWidth: S(4), lineCap: .round))
                 .rotationEffect(.degrees(-90))
         }
-        .frame(width: 24, height: 24)
+        .frame(width: S(24), height: S(24))
         .help("\(Int((progress * 100).rounded()))% of this window has elapsed")
         .accessibilityLabel("Reset cycle progress")
         .accessibilityValue("\(Int((progress * 100).rounded())) percent")
@@ -624,9 +636,9 @@ private struct UsageBar: View {
     var body: some View {
         GeometryReader { geo in
             ZStack(alignment: .leading) {
-                RoundedRectangle(cornerRadius: 3)
+                RoundedRectangle(cornerRadius: S(3))
                     .fill(Color.secondary.opacity(0.18))
-                RoundedRectangle(cornerRadius: 3)
+                RoundedRectangle(cornerRadius: S(3))
                     .fill(
                         LinearGradient(
                             colors: [color.opacity(0.85), color],
@@ -634,7 +646,7 @@ private struct UsageBar: View {
                             endPoint: .trailing
                         )
                     )
-                    .frame(width: max(progress > 0 ? 4 : 0, geo.size.width * progress))
+                    .frame(width: max(progress > 0 ? S(4) : 0, geo.size.width * progress))
             }
         }
     }
@@ -720,7 +732,7 @@ private struct ResetCreditsView: View {
                 .foregroundStyle(expiresSoon ? Color.orange : Color.secondary)
                 .gridColumnAlignment(.trailing)
         }
-        .font(.caption2)
+        .font(.ll(10, .medium))
         .foregroundStyle(.secondary)
         .help(detail)
         .accessibilityElement(children: .ignore)
@@ -728,19 +740,19 @@ private struct ResetCreditsView: View {
     }
 
     private func rows(_ groups: some Sequence<ResetCredits.Group>) -> some View {
-        Grid(alignment: .leading, horizontalSpacing: 8, verticalSpacing: 4) {
+        Grid(alignment: .leading, horizontalSpacing: S(8), verticalSpacing: S(4)) {
             ForEach(Array(groups)) { row($0) }
         }
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 5) {
-                Text("Resets").font(.caption.weight(.medium))
+        VStack(alignment: .leading, spacing: S(6)) {
+            HStack(spacing: S(5)) {
+                Text("Resets").font(.ll(10, .medium))
                 if let credits {
                     Text("\(credits.availableCount)")
-                        .font(.system(size: 10, weight: .medium, design: .rounded))
-                        .padding(.horizontal, 5).padding(.vertical, 1)
+                        .font(.ll(10, .medium, design: .rounded))
+                        .padding(.horizontal, S(5)).padding(.vertical, S(1))
                         .background(Color.secondary.opacity(0.10), in: Capsule())
                         .accessibilityLabel("\(credits.availableCount) resets available")
                 }
@@ -748,19 +760,19 @@ private struct ResetCreditsView: View {
             if let credits {
                 let groups = credits.groups
                 if credits.availableCount == 0 {
-                    Text("None available").font(.caption2).foregroundStyle(.secondary)
+                    Text("None available").font(.ll(10, .medium)).foregroundStyle(.secondary)
                 } else if groups.isEmpty {
-                    Text("Details unavailable").font(.caption2).foregroundStyle(.secondary)
+                    Text("Details unavailable").font(.ll(10, .medium)).foregroundStyle(.secondary)
                 } else {
                     rows(groups.prefix(inlineLimit))
                     if groups.count > inlineLimit {
                         Button("+\(groups.count - inlineLimit) more…") { showingAll = true }
                             .buttonStyle(.plain)
-                            .font(.caption2).foregroundStyle(.secondary)
+                            .font(.ll(10, .medium)).foregroundStyle(.secondary)
                             .popover(isPresented: $showingAll) {
-                                VStack(alignment: .leading, spacing: 12) {
+                                VStack(alignment: .leading, spacing: S(12)) {
                                     HStack {
-                                        Text("Available resets").font(.headline)
+                                        Text("Available resets").font(.ll(13, .bold))
                                         Spacer()
                                         Button { showingAll = false } label: {
                                             Image(systemName: "xmark")
@@ -768,17 +780,17 @@ private struct ResetCreditsView: View {
                                     }
                                     ScrollView {
                                         rows(groups)
-                                    }.frame(maxHeight: 220)
+                                    }.frame(maxHeight: S(220))
                                     if credits.availableCount > credits.available.count {
                                         Text("Some reset details are unavailable.")
-                                            .font(.caption2).foregroundStyle(.secondary)
+                                            .font(.ll(10, .medium)).foregroundStyle(.secondary)
                                     }
-                                }.padding(16).frame(width: 270)
+                                }.padding(S(16)).frame(width: S(270))
                             }
                     }
                 }
             } else {
-                Text("Unavailable").font(.caption2).foregroundStyle(.secondary)
+                Text("Unavailable").font(.ll(10, .medium)).foregroundStyle(.secondary)
             }
         }
     }
