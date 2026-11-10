@@ -136,9 +136,10 @@ Validation: `swift test` and `bash Scripts/test_security.sh`.
 - The summary row shows every Claude window side by side — `5h`, `7d` and each
   model-scoped weekly limit such as `FABLE` — instead of collapsing the weekly
   limits into whichever is most used.
-- Resets are grouped by kind and expiry. Claude grants that name a scoped model
-  are labelled after it, e.g. `3× Fable reset · Mar 9`.
-- Detailed rows carry a ring showing how much of the current window has elapsed.
+- Resets are grouped by kind and expiry in a compact column. Claude grants that
+  name a scoped model are labelled after it, e.g. `3× Fable  Mar 9`.
+- Detailed cards stack every window vertically (Claude's weekly and Fable
+  limits included), each with a ring showing how much of the window has elapsed.
 - Grok provider (see above). LLimit never rewrites the CLI's credential; when
   the access token has expired it runs `grok models`, which makes the CLI
   refresh its own sign-in.

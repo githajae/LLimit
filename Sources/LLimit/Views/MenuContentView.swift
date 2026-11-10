@@ -439,10 +439,6 @@ private struct AccountCardDetailed: View {
             && !ClaudeAuthSource.hasSnapshot(for: account.id)
     }
 
-    private func isWeekly(_ window: UsageWindow) -> Bool {
-        window.label == "7d" || window.label.hasPrefix("Weekly · ")
-    }
-
     @ViewBuilder
     private var content: some View {
         switch state {
@@ -460,32 +456,17 @@ private struct AccountCardDetailed: View {
                         Text("No usage in tracked windows")
                             .font(.caption).foregroundStyle(.secondary)
                     } else {
-                        if account.provider == .claude {
-                            ForEach(snap.windows.filter { !isWeekly($0) }, id: \.label) { w in
-                                WindowRow(window: w, accent: accent)
-                            }
-                            let weekly = snap.windows.filter { isWeekly($0) }
-                            if !weekly.isEmpty {
-                                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())],
-                                          alignment: .leading, spacing: 12) {
-                                    ForEach(weekly, id: \.label) { w in
-                                        WindowRow(window: w, accent: accent)
-                                    }
-                                }
-                            }
-                        } else {
-                            ForEach(snap.windows, id: \.label) { w in
-                                WindowRow(window: w, accent: accent)
-                            }
+                        ForEach(snap.windows, id: \.label) { w in
+                            WindowRow(window: w, accent: accent)
                         }
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 if account.provider == .codex || account.provider == .claude {
                     ResetCreditsView(credits: snap.resetCredits)
-                        .frame(width: 160, alignment: .leading)
+                        .fixedSize(horizontal: true, vertical: false)
                         .frame(maxHeight: .infinity, alignment: .leading)
-                        .padding(.leading, 16)
+                        .padding(.leading, 12)
                         .overlay(alignment: .leading) {
                             Rectangle().fill(Color.secondary.opacity(0.15)).frame(width: 1)
                         }
@@ -681,25 +662,36 @@ private struct ResetCreditsView: View {
 
     private let inlineLimit = 2
 
+    /// The column header already says "Resets", so rows drop the word:
+    /// "3× Fable  Mar 9", "Full  Dec 1".
+    private func shortTitle(_ group: ResetCredits.Group) -> String {
+        let name = group.title.hasSuffix(" reset") ? String(group.title.dropLast(" reset".count)) : group.title
+        return group.count > 1 ? "\(group.count)× \(name)" : name
+    }
+
     private func row(_ group: ResetCredits.Group) -> some View {
-        let expiry = group.expiration.map(resetDateLabel) ?? "No expiry"
+        let expiry = group.expiration.map(resetDateLabel) ?? "—"
         let expiresSoon = (group.expiration?.timeIntervalSinceNow ?? .infinity) <= 3 * 86400
         let detail = "\(group.count)× \(group.title) · " + (group.expiration.map { "expires \(resetDateLabel($0))" } ?? "no expiry")
-        return HStack(spacing: 4) {
-            Text(group.count > 1 ? "\(group.count)× \(group.title)" : group.title)
+        return GridRow {
+            Text(shortTitle(group))
                 .lineLimit(1)
-                .truncationMode(.tail)
-            Spacer(minLength: 4)
             Text(expiry)
                 .monospacedDigit()
                 .foregroundStyle(expiresSoon ? Color.orange : Color.secondary)
-                .fixedSize()
+                .gridColumnAlignment(.trailing)
         }
         .font(.caption2)
         .foregroundStyle(.secondary)
         .help(detail)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(detail)
+    }
+
+    private func rows(_ groups: some Sequence<ResetCredits.Group>) -> some View {
+        Grid(alignment: .leading, horizontalSpacing: 8, verticalSpacing: 4) {
+            ForEach(Array(groups)) { row($0) }
+        }
     }
 
     var body: some View {
@@ -721,7 +713,7 @@ private struct ResetCreditsView: View {
                 } else if groups.isEmpty {
                     Text("Details unavailable").font(.caption2).foregroundStyle(.secondary)
                 } else {
-                    ForEach(groups.prefix(inlineLimit)) { row($0) }
+                    rows(groups.prefix(inlineLimit))
                     if groups.count > inlineLimit {
                         Button("+\(groups.count - inlineLimit) more…") { showingAll = true }
                             .buttonStyle(.plain)
@@ -736,9 +728,7 @@ private struct ResetCreditsView: View {
                                         }.buttonStyle(.plain).accessibilityLabel("Close")
                                     }
                                     ScrollView {
-                                        VStack(alignment: .leading, spacing: 8) {
-                                            ForEach(groups) { row($0) }
-                                        }
+                                        rows(groups)
                                     }.frame(maxHeight: 220)
                                     if credits.availableCount > credits.available.count {
                                         Text("Some reset details are unavailable.")
