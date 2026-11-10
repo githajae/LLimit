@@ -129,7 +129,17 @@ private struct AccountDashboard: View {
     private let dailyDays = 14
     private let weeklyLimit = 8
 
-    private var colors: [Color] { SeriesPalette.colors(for: history.series) }
+    /// Series with data in `buckets`/`points`, in global order, with their
+    /// fixed colors.
+    private func present(_ names: some Sequence<String>) -> (series: [String], colors: [Color]) {
+        let names = Set(names)
+        let series = history.series.filter { names.contains($0) }
+        return (series, series.map(color(for:)))
+    }
+
+    private func color(for series: String) -> Color {
+        SeriesPalette.color(at: history.series.firstIndex(of: series) ?? history.series.count)
+    }
 
     var body: some View {
         ScrollView {
@@ -144,20 +154,25 @@ private struct AccountDashboard: View {
                         title: "This week",
                         subtitle: "\(dayLabel(window.start)) – \(dayLabel(window.end)) · % of each limit used · dashed line is an even pace"
                     ) {
-                        TrendChart(history: history, window: window, colors: colors)
+                        let trend = history.trend(in: window)
+                        let shown = present(trend.map(\.series))
+                        TrendChart(points: trend, series: shown.series, colors: shown.colors, window: window)
                     }
                     DashboardSection(
                         title: "Daily usage",
                         subtitle: "Last \(dailyDays) days · % of each weekly limit used that day"
                     ) {
-                        DailyChart(buckets: history.daily(days: dailyDays), series: history.series,
-                                   colors: colors, days: dailyDays)
+                        let daily = history.daily(days: dailyDays)
+                        let shown = present(daily.map(\.series))
+                        DailyChart(buckets: daily, series: shown.series, colors: shown.colors, days: dailyDays)
                     }
                     DashboardSection(
                         title: "Weekly usage",
                         subtitle: "Last \(weeklyLimit) weekly windows · % of each limit used"
                     ) {
-                        WeeklyChart(buckets: history.weekly(limit: weeklyLimit), series: history.series, colors: colors)
+                        let weekly = history.weekly(limit: weeklyLimit)
+                        let shown = present(weekly.map(\.series))
+                        WeeklyChart(buckets: weekly, series: shown.series, colors: shown.colors)
                     }
                 }
                 footer
@@ -179,8 +194,9 @@ private struct AccountDashboard: View {
 
     /// "Weekly 34% used · Fable 4% used · resets in 3d 7h"
     private var currentSummary: String {
+        let window = history.currentWindow()
         var parts = history.series.compactMap { name -> String? in
-            guard let last = history.points(for: name).last else { return nil }
+            guard let last = history.points(for: name).last, window.contains(last.time) else { return nil }
             return "\(name) \(Int(last.used.rounded()))% used"
         }
         if let end = history.points(for: "Weekly").last?.resetsAt, end > Date() {
@@ -225,14 +241,14 @@ private struct DashboardSection<Content: View>: View {
 // MARK: - Charts
 
 private struct TrendChart: View {
-    let history: UsageHistory
-    let window: DateInterval
+    let points: [UsageHistory.Point]
+    let series: [String]
     let colors: [Color]
+    let window: DateInterval
     @State private var selected: Date?
 
     var body: some View {
-        let points = history.trend(in: window)
-        let ends = history.series.compactMap { name in points.last { $0.series == name } }
+        let ends = series.compactMap { name in points.last { $0.series == name } }
         Chart {
             ForEach([window.start, window.end], id: \.self) { date in
                 LineMark(x: .value("Time", date), y: .value("Used", date == window.start ? 0 : 100),
@@ -276,7 +292,7 @@ private struct TrendChart: View {
                     }
             }
         }
-        .chartForegroundStyleScale(domain: history.series, range: colors)
+        .chartForegroundStyleScale(domain: series, range: colors)
         .chartXScale(domain: window.start...window.end)
         .chartYScale(domain: 0...100)
         .chartXAxis {
@@ -298,8 +314,8 @@ private struct TrendChart: View {
         .frame(height: 300)
     }
 
-    private func color(for series: String) -> Color {
-        SeriesPalette.color(at: history.series.firstIndex(of: series) ?? history.series.count)
+    private func color(for name: String) -> Color {
+        series.firstIndex(of: name).map { colors[$0] } ?? .gray
     }
 
     /// Each series' reading nearest to `date`, snapped to the closest one.
@@ -307,7 +323,7 @@ private struct TrendChart: View {
         -> (time: Date, values: [UsageHistory.Point])? {
         guard let anchor = points.min(by: { abs($0.time.timeIntervalSince(date)) < abs($1.time.timeIntervalSince(date)) })
         else { return nil }
-        let values = history.series.compactMap { name in
+        let values = series.compactMap { name in
             points.filter { $0.series == name }
                 .min { abs($0.time.timeIntervalSince(anchor.time)) < abs($1.time.timeIntervalSince(anchor.time)) }
         }
@@ -369,7 +385,7 @@ private struct DailyChart: View {
     private func rows(_ buckets: [UsageHistory.Bucket]) -> [(String, Color, String)] {
         series.enumerated().map { index, name in
             let used = buckets.first { $0.series == name }?.used ?? 0
-            return (name, SeriesPalette.color(at: index), "\(Int(used.rounded()))%")
+            return (name, colors[index], "\(Int(used.rounded()))%")
         }
     }
 }
@@ -382,7 +398,8 @@ private struct WeeklyChart: View {
 
     private func label(_ start: Date) -> String {
         let end = start.addingTimeInterval(UsageHistory.weekLength)
-        return "\(dayLabel(start))–\(dayLabel(end))"
+        let sameMonth = Calendar.current.isDate(start, equalTo: end, toGranularity: .month)
+        return "\(dayLabel(start))–" + (sameMonth ? end.formatted(.dateTime.day()) : dayLabel(end))
     }
 
     var body: some View {
@@ -420,7 +437,7 @@ private struct WeeklyChart: View {
     private func rows(_ buckets: [UsageHistory.Bucket]) -> [(String, Color, String)] {
         series.enumerated().map { index, name in
             let used = buckets.first { $0.series == name }?.used ?? 0
-            return (name, SeriesPalette.color(at: index), "\(Int(used.rounded()))%")
+            return (name, colors[index], "\(Int(used.rounded()))%")
         }
     }
 }

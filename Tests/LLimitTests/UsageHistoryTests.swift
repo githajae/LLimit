@@ -30,6 +30,17 @@ final class UsageHistoryTests: XCTestCase {
         XCTAssertNil(UsageHistory.seriesName(for: "5h"))
     }
 
+    func testRecentScopedLimitsComeBeforeRetiredOnes() {
+        let old = UsageLogRecord(time: date("2026-06-01T00:00:00Z"), accounts: [
+            .init(id: account, name: "Claude", provider: .claude, windows: [
+                .init(label: "7d", usedPercent: 5, resetsAt: date("2026-06-05T14:00:00Z")),
+                .init(label: "Weekly · Sonnet", usedPercent: 1, resetsAt: date("2026-06-05T14:00:00Z")),
+            ])
+        ])
+        let history = UsageHistory(records: [old, record("2026-11-10T00:00:00Z", weekly: 10, fable: 1, resets: "2026-11-13T14:00:00Z")], accountID: account)
+        XCTAssertEqual(history.series, ["Weekly", "Fable", "Sonnet"])
+    }
+
     func testDailyAndWeeklyTotalsAcrossAResetAndACredit() {
         let records = [
             record("2026-11-12T10:00:00Z", weekly: 80, resets: "2026-11-13T14:00:00Z"),  // first reading: no day credit

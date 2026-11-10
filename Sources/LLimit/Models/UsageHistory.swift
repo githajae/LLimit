@@ -28,24 +28,27 @@ struct UsageHistory {
     static let sameWindowTolerance: TimeInterval = 60 * 60
 
     let points: [Point]
-    /// "Weekly" first, then scoped limits in order of first appearance.
+    /// "Weekly" first, then scoped limits, most recently seen first, so a
+    /// current limit (Fable) keeps the leading colors over a retired one
+    /// (Sonnet). Colors are assigned by this order.
     let series: [String]
 
     init(records: [UsageLogRecord], accountID: UUID) {
         var points: [Point] = []
-        var scoped: [String] = []
+        var lastSeen: [String: Date] = [:]
         for record in records {
             guard let entry = record.accounts.first(where: { $0.id == accountID }),
                   let windows = entry.windows else { continue }
             let time = entry.fetchedAt ?? record.time
             for window in windows {
                 guard let name = Self.seriesName(for: window.label), let used = window.usedPercent else { continue }
-                if name != "Weekly", !scoped.contains(name) { scoped.append(name) }
+                if name != "Weekly" { lastSeen[name] = max(lastSeen[name] ?? .distantPast, time) }
                 points.append(Point(time: time, series: name, used: used, resetsAt: window.resetsAt))
             }
         }
         self.points = points.sorted { $0.time < $1.time }
         let hasWeekly = points.contains { $0.series == "Weekly" }
+        let scoped = lastSeen.sorted { ($0.value, $1.key) > ($1.value, $0.key) }.map(\.key)
         self.series = (hasWeekly ? ["Weekly"] : []) + scoped
     }
 
