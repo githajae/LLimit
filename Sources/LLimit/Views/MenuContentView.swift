@@ -52,6 +52,7 @@ struct MenuContentView: View {
                         }
                     }
                 }
+                .modifier(AlignedResetColumns())
                 .padding(.horizontal, 16)
                 .padding(.vertical, 12)
                 .background(GeometryReader { proxy in
@@ -381,6 +382,7 @@ private struct MiniWindow: View {
 private struct AccountCardDetailed: View {
     let account: Account
     let state: UsageState
+    @Environment(\.resetColumnWidth) private var resetColumnWidth
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -465,6 +467,10 @@ private struct AccountCardDetailed: View {
                 if account.provider == .codex || account.provider == .claude {
                     ResetCreditsView(credits: snap.resetCredits)
                         .fixedSize(horizontal: true, vertical: false)
+                        .background(GeometryReader { proxy in
+                            Color.clear.preference(key: ResetColumnWidthKey.self, value: proxy.size.width)
+                        })
+                        .frame(width: resetColumnWidth, alignment: .leading)
                         .frame(maxHeight: .infinity, alignment: .leading)
                         .padding(.leading, 12)
                         .overlay(alignment: .leading) {
@@ -646,6 +652,39 @@ private func formatRelative(_ date: Date) -> String {
     let d = secs / 86400
     let h = (secs % 86400) / 3600
     return h > 0 ? "\(d)d \(h)h" : "\(d)d"
+}
+
+// MARK: - Shared reset column width
+
+/// Natural width of each card's reset column; the widest one wins.
+private struct ResetColumnWidthKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
+    }
+}
+
+private struct ResetColumnWidthEnvironmentKey: EnvironmentKey {
+    static let defaultValue: CGFloat? = nil
+}
+
+private extension EnvironmentValues {
+    var resetColumnWidth: CGFloat? {
+        get { self[ResetColumnWidthEnvironmentKey.self] }
+        set { self[ResetColumnWidthEnvironmentKey.self] = newValue }
+    }
+}
+
+/// Gives every detailed card's reset column the width of the widest one,
+/// so the dividers line up from card to card.
+struct AlignedResetColumns: ViewModifier {
+    @State private var width: CGFloat = 0
+
+    func body(content: Content) -> some View {
+        content
+            .onPreferenceChange(ResetColumnWidthKey.self) { width = $0 }
+            .environment(\.resetColumnWidth, width > 0 ? width : nil)
+    }
 }
 
 private func resetDateLabel(_ date: Date) -> String {
