@@ -121,6 +121,11 @@ struct MenuContentView: View {
             } label: {
                 Label("Refresh", systemImage: "arrow.clockwise")
             }
+            Button {
+                DashboardWindowController.shared.show(store: store, refresher: refresher)
+            } label: {
+                Label("Dashboard", systemImage: "chart.xyaxis.line")
+            }
             Spacer()
             Button("Settings…") {
                 NSApp.activate(ignoringOtherApps: true)

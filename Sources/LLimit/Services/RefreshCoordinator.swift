@@ -46,12 +46,18 @@ final class RefreshCoordinator: ObservableObject {
 
     func refreshAll() async {
         let accounts = store.accounts
+        let startedAt = Date()
         await withTaskGroup(of: Void.self) { group in
             for account in accounts {
                 group.addTask { @MainActor in await self.refresh(account) }
             }
         }
-        lastRefreshedAt = Date()
+        let finishedAt = Date()
+        lastRefreshedAt = finishedAt
+        if let record = UsageLog.record(time: finishedAt, refreshStartedAt: startedAt,
+                                        accounts: accounts, states: states) {
+            UsageLog.shared.append(record)
+        }
     }
 
     func forget(_ id: UUID) {

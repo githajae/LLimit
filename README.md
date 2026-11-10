@@ -140,6 +140,14 @@ Validation: `swift test` and `bash Scripts/test_security.sh`.
   name a scoped model are labelled after it, e.g. `3× Fable  Mar 9`.
 - Detailed cards stack every window vertically (Claude's weekly and Fable
   limits included), each with a ring showing how much of the window has elapsed.
+- Usage log: every refresh appends one JSON line to
+  `~/Library/Application Support/LLimit/usage_log.jsonl` with the time and,
+  per account, each window's used percent and reset time, the available reset
+  count and any error. The file is never trimmed.
+- Dashboard (chart button in the popover footer) opens a window that stays
+  until closed. Per account it shows this weekly window's trend (Claude's
+  weekly and Fable limits overlaid, with an even-pace reference), usage per
+  day for the last 14 days, and usage per weekly window for the last 8.
 - Grok provider (see above). LLimit never rewrites the CLI's credential; when
   the access token has expired it runs `grok models`, which makes the CLI
   refresh its own sign-in.
