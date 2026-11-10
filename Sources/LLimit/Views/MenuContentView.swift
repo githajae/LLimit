@@ -21,7 +21,9 @@ struct MenuContentView: View {
     @State private var screenHeight: CGFloat = NSScreen.main?.visibleFrame.height ?? 800
     private var maximumListHeight: CGFloat { max(120, min(700, screenHeight - 150)) }
 
-    private var width: CGFloat { popoverMode == .summary ? 460 : 540 }
+    /// Summary is a little wider than upstream so a Claude row with 5h,
+    /// weekly and a model-scoped limit still fits beside the reset counter.
+    private var width: CGFloat { popoverMode == .summary ? 500 : 540 }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -194,12 +196,26 @@ private struct AccountRowSummary: View {
     }
 
     private var identityWidth: CGFloat {
-        if case .loaded(let snapshot) = state, (account.provider == .claude ? snapshot.claudeSummaryWindows : snapshot.windows).count >= 3 { return 130 }
-        return 150
+        guard case .loaded(let snapshot) = state else { return 150 }
+        switch columnCount(snapshot) {
+        case 4...: return 110
+        case 3: return 130
+        default: return 150
+        }
     }
 
     private var providerBadge: some View {
         ProviderBadge(provider: account.provider, size: 22)
+    }
+
+    private var showsResets: Bool {
+        account.provider == .codex || account.provider == .claude
+    }
+
+    /// Usage bars plus the reset counter; three or more columns switch the
+    /// bars to their compact form so the row keeps its width.
+    private func columnCount(_ snapshot: UsageSnapshot) -> Int {
+        snapshot.windows.count + (showsResets ? 1 : 0)
     }
 
     private var accent: Color {
@@ -237,19 +253,17 @@ private struct AccountRowSummary: View {
                 Text("no usage windows")
                     .font(.caption).foregroundStyle(.secondary)
             } else {
-                let summaryWindows = account.provider == .claude ? snap.claudeSummaryWindows : snap.windows
                 HStack(spacing: 10) {
                     HStack(spacing: 12) {
-                        ForEach(summaryWindows, id: \.label) { w in
-                            MiniWindow(window: w, accent: accent, compact: summaryWindows.count >= 3)
-                                .help(account.provider == .claude && w.label == "7d"
-                                      ? snap.claudeWeeklyHelp : "Remaining usage · " + w.label.uppercased())
+                        ForEach(snap.windows, id: \.label) { w in
+                            MiniWindow(window: w, accent: accent, compact: columnCount(snap) >= 3)
+                                .help(summaryHelp(for: w, note: snap.note))
                         }
                     }
                     .frame(maxWidth: .infinity)
 
-                    if account.provider == .codex || account.provider == .claude {
-                        CompactResetCount(credits: snap.resetCredits)
+                    if showsResets {
+                        CompactResetCount(credits: snap.resetCredits, iconOnly: columnCount(snap) >= 4)
                     }
                 }
             }
@@ -260,24 +274,42 @@ private struct AccountRowSummary: View {
                 .lineLimit(1)
         }
     }
+
+    private func summaryHelp(for window: UsageWindow, note: String?) -> String {
+        var text = "Remaining usage · " + window.label
+        if let resets = window.resetsAt, resets > Date() { text += " · resets in \(formatRelative(resets))" }
+        if let note, !note.isEmpty { text += "\n" + note }
+        return text
+    }
 }
 
 private struct CompactResetCount: View {
     let credits: ResetCredits?
+    var iconOnly = false
 
     private var label: String {
         credits.map { "\($0.availableCount)" } ?? "—"
     }
 
     private var description: String {
-        credits.map { "\($0.availableCount) resets available" } ?? "Reset count unavailable"
+        guard let credits else { return "Reset count unavailable" }
+        let lines = credits.groups.map { group in
+            "\(group.count)× \(group.title)" + (group.expiration.map { " · expires \(resetDateLabel($0))" } ?? "")
+        }
+        return (["\(credits.availableCount) resets available"] + lines).joined(separator: "\n")
     }
 
     var body: some View {
         HStack(spacing: 5) {
-            Text("Resets")
-                .font(.caption2)
-                .foregroundStyle(.secondary)
+            if iconOnly {
+                Image(systemName: "arrow.counterclockwise")
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(.secondary)
+            } else {
+                Text("Resets")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
             Text(label)
                 .font(.system(size: 10, weight: .medium, design: .rounded))
                 .monospacedDigit()
@@ -337,10 +369,9 @@ private struct MiniWindow: View {
     /// the summary view. `7d opus` is a model-specific weekly cap — drop the
     /// redundant `7D` prefix.
     private var shortLabel: String {
-        let l = window.label.lowercased()
-        if let name = window.label.components(separatedBy: " · ").last,
-           window.label.hasPrefix("Weekly · ") { return name.uppercased() }
-        if l.contains("opus") { return "OPUS" }
+        if window.label.hasPrefix("Weekly · ") {
+            return String(window.label.dropFirst("Weekly · ".count)).uppercased()
+        }
         return window.label.uppercased()
     }
 }
@@ -482,36 +513,65 @@ private struct WindowRow: View {
     let accent: Color
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack(alignment: .firstTextBaseline) {
-                Text(windowTitle)
-                    .font(.caption.weight(.medium))
-                    .foregroundStyle(.secondary)
-                Spacer()
-                Text(rightText)
-                    .font(.caption.monospacedDigit().weight(.semibold))
-                    .foregroundStyle(barColor)
-            }
-            UsageBar(progress: progress, color: barColor)
-                .frame(height: 6)
-            HStack {
-                if let resets = window.resetsAt, resets > Date() {
-                    Image(systemName: "clock")
-                        .font(.system(size: 9))
-                    Text("Resets in \(formatRelative(resets))")
-                        .font(.caption2)
+        TimelineView(.periodic(from: .now, by: 60)) { context in
+            HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(alignment: .firstTextBaseline) {
+                        Text(windowTitle)
+                            .font(.caption.weight(.medium))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                        Spacer()
+                        Text(rightText)
+                            .font(.caption.monospacedDigit().weight(.semibold))
+                            .foregroundStyle(barColor)
+                    }
+                    UsageBar(progress: progress, color: barColor)
+                        .frame(height: 6)
+                    HStack {
+                        if let resets = window.resetsAt, resets > context.date {
+                            Image(systemName: "clock")
+                                .font(.system(size: 9))
+                            Text("Resets in \(formatRelative(resets))")
+                                .font(.caption2)
+                        }
+                        Spacer()
+                    }
+                    .foregroundStyle(.tertiary)
                 }
-                Spacer()
+
+                if let resetProgress = resetProgress(at: context.date) {
+                    ResetProgressRing(progress: resetProgress)
+                }
             }
-            .foregroundStyle(.tertiary)
         }
     }
 
+    /// Fraction of the current window that has elapsed, for windows with a
+    /// known length.
+    private func resetProgress(at now: Date) -> Double? {
+        guard let resetsAt = window.resetsAt else { return nil }
+        let duration: TimeInterval
+        switch window.label {
+        case "5h": duration = 5 * 60 * 60
+        case "1d": duration = 24 * 60 * 60
+        case "7d": duration = 7 * 24 * 60 * 60
+        default:
+            guard window.label.hasPrefix("Weekly · ") else { return nil }
+            duration = 7 * 24 * 60 * 60
+        }
+        return max(0, min(1, 1 - resetsAt.timeIntervalSince(now) / duration))
+    }
+
+    /// Model-scoped weekly limits sit in the weekly grid beside "Weekly",
+    /// so the model name alone is enough and fits next to the ring.
     private var windowTitle: String {
         switch window.label {
         case "5h": return "5-hour"
         case "7d": return "Weekly"
-        default: return window.label
+        default:
+            if window.label.hasPrefix("Weekly · ") { return String(window.label.dropFirst("Weekly · ".count)) }
+            return window.label
         }
     }
 
@@ -547,6 +607,26 @@ private struct WindowRow: View {
         case "7d": return 25_000_000
         default: return 1_000_000
         }
+    }
+}
+
+private struct ResetProgressRing: View {
+    let progress: Double
+
+    var body: some View {
+        ZStack {
+            Circle()
+                .stroke(Color.secondary.opacity(0.18), lineWidth: 4)
+            Circle()
+                .trim(from: 0, to: progress)
+                .stroke(Color.secondary.opacity(0.75),
+                        style: StrokeStyle(lineWidth: 4, lineCap: .round))
+                .rotationEffect(.degrees(-90))
+        }
+        .frame(width: 24, height: 24)
+        .help("\(Int((progress * 100).rounded()))% of this window has elapsed")
+        .accessibilityLabel("Reset cycle progress")
+        .accessibilityValue("\(Int((progress * 100).rounded())) percent")
     }
 }
 
@@ -587,32 +667,39 @@ private func formatRelative(_ date: Date) -> String {
     return h > 0 ? "\(d)d \(h)h" : "\(d)d"
 }
 
+private func resetDateLabel(_ date: Date) -> String {
+    let formatter = DateFormatter()
+    formatter.locale = Locale(identifier: "en_US_POSIX")
+    formatter.dateFormat = "MMM d"
+    return formatter.string(from: date)
+}
+
+/// Available resets grouped by kind and expiry, e.g. "3× Fable reset · Mar 9".
 private struct ResetCreditsView: View {
     let credits: ResetCredits?
     @State private var showingAll = false
 
-    private var sortedCredits: [ResetCredits.Credit] {
-        (credits?.available ?? []).sorted {
-            ($0.expiration ?? .distantFuture) < ($1.expiration ?? .distantFuture)
+    private let inlineLimit = 2
+
+    private func row(_ group: ResetCredits.Group) -> some View {
+        let expiry = group.expiration.map(resetDateLabel) ?? "No expiry"
+        let expiresSoon = (group.expiration?.timeIntervalSinceNow ?? .infinity) <= 3 * 86400
+        let detail = "\(group.count)× \(group.title) · " + (group.expiration.map { "expires \(resetDateLabel($0))" } ?? "no expiry")
+        return HStack(spacing: 4) {
+            Text(group.count > 1 ? "\(group.count)× \(group.title)" : group.title)
+                .lineLimit(1)
+                .truncationMode(.tail)
+            Spacer(minLength: 4)
+            Text(expiry)
+                .monospacedDigit()
+                .foregroundStyle(expiresSoon ? Color.orange : Color.secondary)
+                .fixedSize()
         }
-    }
-
-    private func dateLabel(_ date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.dateFormat = "MMM d"
-        return formatter.string(from: date)
-    }
-
-    private func expirationLabel(_ credit: ResetCredits.Credit) -> some View {
-        let detail = credit.expiration.map { "Expires \(dateLabel($0)) · \(credit.englishTitle)" }
-            ?? "No expiry · \(credit.englishTitle)"
-        return Text(credit.expiration.map(dateLabel) ?? "No expiry")
-            .font(.caption2).monospacedDigit()
-            .foregroundStyle((credit.expiration?.timeIntervalSinceNow ?? .infinity) <= 3 * 86400 ? Color.orange : Color.secondary)
-            .fixedSize()
-            .help(detail)
-            .accessibilityLabel(detail)
+        .font(.caption2)
+        .foregroundStyle(.secondary)
+        .help(detail)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(detail)
     }
 
     var body: some View {
@@ -628,47 +715,37 @@ private struct ResetCreditsView: View {
                 }
             }.foregroundStyle(.secondary)
             if let credits {
+                let groups = credits.groups
                 if credits.availableCount == 0 {
                     Text("None available").font(.caption2).foregroundStyle(.secondary)
+                } else if groups.isEmpty {
+                    Text("Details unavailable").font(.caption2).foregroundStyle(.secondary)
                 } else {
-                    HStack(spacing: 5) {
-                        ForEach(Array(sortedCredits.prefix(2).enumerated()), id: \.element.id) { index, credit in
-                            if index > 0 {
-                                Text("·").font(.caption2).foregroundStyle(.tertiary)
-                                    .accessibilityHidden(true)
+                    ForEach(groups.prefix(inlineLimit)) { row($0) }
+                    if groups.count > inlineLimit {
+                        Button("+\(groups.count - inlineLimit) more…") { showingAll = true }
+                            .buttonStyle(.plain)
+                            .font(.caption2).foregroundStyle(.secondary)
+                            .popover(isPresented: $showingAll) {
+                                VStack(alignment: .leading, spacing: 12) {
+                                    HStack {
+                                        Text("Available resets").font(.headline)
+                                        Spacer()
+                                        Button { showingAll = false } label: {
+                                            Image(systemName: "xmark")
+                                        }.buttonStyle(.plain).accessibilityLabel("Close")
+                                    }
+                                    ScrollView {
+                                        VStack(alignment: .leading, spacing: 8) {
+                                            ForEach(groups) { row($0) }
+                                        }
+                                    }.frame(maxHeight: 220)
+                                    if credits.availableCount > credits.available.count {
+                                        Text("Some reset details are unavailable.")
+                                            .font(.caption2).foregroundStyle(.secondary)
+                                    }
+                                }.padding(16).frame(width: 270)
                             }
-                            expirationLabel(credit)
-                        }
-                        if credits.availableCount > 2 {
-                            Spacer(minLength: 6)
-                            Button("+\(credits.availableCount - 2) more…") { showingAll = true }
-                                .buttonStyle(.plain)
-                                .fixedSize()
-                                .font(.caption2).foregroundStyle(.secondary)
-                                .popover(isPresented: $showingAll) {
-                                    VStack(alignment: .leading, spacing: 12) {
-                                        HStack {
-                                            Text("Available resets").font(.headline)
-                                            Spacer()
-                                            Button { showingAll = false } label: {
-                                                Image(systemName: "xmark")
-                                            }.buttonStyle(.plain).accessibilityLabel("Close")
-                                        }
-                                        ScrollView {
-                                            VStack(alignment: .leading, spacing: 10) {
-                                                ForEach(sortedCredits) { credit in expirationLabel(credit) }
-                                            }
-                                        }.frame(maxHeight: 220)
-                                        if credits.availableCount > sortedCredits.count {
-                                            Text("Some reset details are unavailable.")
-                                                .font(.caption2).foregroundStyle(.secondary)
-                                        }
-                                    }.padding(16).frame(width: 270)
-                                }
-                        }
-                    }
-                    if sortedCredits.isEmpty {
-                        Text("Details unavailable").font(.caption2).foregroundStyle(.secondary)
                     }
                 }
             } else {

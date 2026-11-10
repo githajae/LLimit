@@ -35,10 +35,10 @@ struct LoginSheet: View {
             .padding(.top, 16)
             .padding(.bottom, 10)
 
-            if account.provider == .claude {
-                claudeOAuthBody
-            } else {
-                codexBody
+            switch account.provider {
+            case .claude: claudeOAuthBody
+            case .codex: codexBody
+            case .grok: grokBody
             }
         }
         .frame(width: 520)
@@ -213,6 +213,40 @@ struct LoginSheet: View {
     private func cancelOAuth() {
         guard let session = oauthSession else { return }
         Task { await session.cancel() }
+    }
+
+    // MARK: - Grok: the CLI owns the sign-in
+
+    @ViewBuilder
+    private var grokBody: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("LLimit reads the Grok CLI's sign-in and never changes it. To sign in or switch accounts, run this in Terminal, then click Done:")
+                .font(.callout)
+                .fixedSize(horizontal: false, vertical: true)
+            HStack {
+                Text("grok login")
+                    .font(.body.monospaced())
+                    .textSelection(.enabled)
+                Spacer()
+                Button("Copy") {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString("grok login", forType: .string)
+                }
+                .controlSize(.small)
+            }
+            .padding(10)
+            .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 6))
+            HStack {
+                Spacer()
+                Button("Done") {
+                    onFinished?()
+                    dismiss()
+                }
+                .keyboardShortcut(.defaultAction)
+            }
+        }
+        .padding(.horizontal, 18)
+        .padding(.bottom, 16)
     }
 
     // MARK: - Codex: existing in-app CLI flow

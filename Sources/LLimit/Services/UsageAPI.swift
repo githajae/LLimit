@@ -106,7 +106,7 @@ struct AnthropicUsageAPI: UsageAPI {
             email: profileEmail,
             planLabel: profilePlan,
             organization: profileOrg,
-            resetCredits: limitsResult?.cedarEmber?.resetCredits()
+            resetCredits: limitsResult.flatMap { $0.cedarEmber?.resetCredits(modelNames: $0.scopedModelNames) }
         )
     }
 
@@ -172,6 +172,9 @@ struct AnthropicUsageAPI: UsageAPI {
                         label = "Weekly · \(name)"
                     default: continue
                     }
+                    // The same scope can appear more than once; keep the first
+                    // so SwiftUI rows keyed by label stay unique.
+                    guard !result.contains(where: { $0.label == label }) else { continue }
                     let value = RateLimit(utilization: percent, resetsAt: limit.resets_at)
                     result.append(UsageWindow(label: label, usedPercent: percent / 100, resetsAt: value.resetsAtDate))
                 }
@@ -184,6 +187,13 @@ struct AnthropicUsageAPI: UsageAPI {
                 }
             }
             return result
+        }
+
+        /// Display names of the model-scoped weekly limits, e.g. ["Fable"].
+        var scopedModelNames: [String] {
+            windows.compactMap { window in
+                window.label.hasPrefix("Weekly · ") ? String(window.label.dropFirst("Weekly · ".count)) : nil
+            }
         }
 
         enum CodingKeys: String, CodingKey {

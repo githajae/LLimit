@@ -11,6 +11,7 @@ struct ProviderIcon: View {
         switch provider {
         case .claude: return Color(red: 0.85, green: 0.51, blue: 0.34) // Anthropic clay/orange
         case .codex:  return Color(red: 0.06, green: 0.65, blue: 0.52) // OpenAI teal-green
+        case .grok:   return Color(red: 0.45, green: 0.50, blue: 0.62) // neutral slate
         }
     }
 
@@ -19,6 +20,7 @@ struct ProviderIcon: View {
             switch provider {
             case .claude: AnthropicMark()
             case .codex:  OpenAIKnot()
+            case .grok:   SlashMark()
             }
         }
         .foregroundStyle(color)
@@ -90,3 +92,26 @@ private struct OpenAIKnot: View {
     }
 }
 
+// MARK: - Grok mark
+//
+// A generic slashed-circle glyph rather than xAI's logo: one ring with a
+// diagonal stroke running through it.
+private struct SlashMark: View {
+    var body: some View {
+        GeometryReader { geo in
+            let s = min(geo.size.width, geo.size.height)
+            let lineW = max(1.1, s * 0.11)
+            ZStack {
+                Circle()
+                    .stroke(lineWidth: lineW)
+                    .frame(width: s * 0.72, height: s * 0.72)
+                Capsule()
+                    .frame(width: lineW, height: s * 1.02)
+                    .rotationEffect(.degrees(40))
+            }
+            .frame(width: s, height: s)
+            .position(x: geo.size.width / 2, y: geo.size.height / 2)
+        }
+        .aspectRatio(1, contentMode: .fit)
+    }
+}

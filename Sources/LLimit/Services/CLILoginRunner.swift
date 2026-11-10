@@ -237,6 +237,8 @@ final class CLILoginRunner: ObservableObject {
             return ("claude", ["auth", "login"], "CLAUDE_CONFIG_DIR")
         case .codex:
             return ("codex", Self.codexLoginArguments(callbackPortAvailable: callbackPortAvailable), "CODEX_HOME")
+        case .grok:
+            return ("grok", ["login"], "GROK_HOME")
         }
     }
 
@@ -291,6 +293,8 @@ final class CLILoginRunner: ObservableObject {
         case .codex:
             let out = await runCapture("codex", ["-c", "cli_auth_credentials_store=\"file\"", "login", "status"], env: ["CODEX_HOME": account.authenticationDirectory])
             return out.lowercased().contains("logged in")
+        case .grok:
+            return (try? GrokUsageAPI.loadAuth(home: account.configDir)) != nil
         }
     }
 

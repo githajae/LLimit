@@ -51,6 +51,9 @@ enum LoginStatus: Equatable {
                 || (root["OPENAI_API_KEY"] as? String)?.isEmpty == false
             guard hasToken else { return .signedOut }
             return .signedIn(email: codexEmailFromIDToken(tokens))
+        case .grok:
+            guard let auth = try? GrokUsageAPI.loadAuth(home: account.configDir) else { return .signedOut }
+            return .signedIn(email: auth.email)
         }
     }
 
@@ -344,11 +347,20 @@ private struct EditForm: View {
                 .pickerStyle(.segmented)
                 .onChange(of: draft.provider) { _, p in
                     let home = FileManager.default.homeDirectoryForCurrentUser.path
-                    let base = home + (p == .claude ? "/.claude" : "/.codex")
-                    draft.configDir = p == .codex ? draft.authenticationDirectory : Self.uniqueDir(from: base, excluding: existingConfigDirs)
+                    switch p {
+                    case .claude:
+                        draft.configDir = Self.uniqueDir(from: home + "/.claude", excluding: existingConfigDirs)
+                    case .codex:
+                        draft.configDir = draft.authenticationDirectory
+                    case .grok:
+                        draft.configDir = GrokUsageAPI.defaultHome
+                    }
                 }
                 if draft.provider == .codex {
                     Text("Login is saved separately in LLimit. Switching accounts in Codex will not change this account.")
+                        .font(.callout).foregroundStyle(.secondary)
+                } else if draft.provider == .grok {
+                    Text("Uses the Grok CLI's sign-in in ~/.grok. Run `grok login` in Terminal to sign in or switch accounts.")
                         .font(.callout).foregroundStyle(.secondary)
                 } else {
                     HStack {
