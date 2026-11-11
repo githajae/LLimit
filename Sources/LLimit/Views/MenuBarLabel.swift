@@ -2,8 +2,8 @@ import SwiftUI
 import AppKit
 
 /// The live status indicator in the system menu bar. Picks the most-loaded
-/// window across all accounts and renders two stacked bars (5h / 7d) plus
-/// an optional percent label.
+/// window of the main account (or of every account when none is chosen)
+/// and renders two stacked bars (5h / 7d) plus an optional percent label.
 ///
 /// On macOS 26, MenuBarExtra no longer renders complex SwiftUI view
 /// hierarchies (GeometryReader, ZStack, etc.) in its label. We work around
@@ -14,6 +14,7 @@ struct MenuBarLabel: View {
     @EnvironmentObject var refresher: RefreshCoordinator
 
     @AppStorage("compactMenuBar") private var compactMenuBar: Bool = false
+    @AppStorage(MenuBarAccount.storageKey) private var menuBarAccountID: String = ""
 
     var body: some View {
         let summary = highestLoad()
@@ -43,7 +44,7 @@ struct MenuBarLabel: View {
         var best7: Double? = nil
         var headline: Double? = nil
 
-        for account in store.accounts {
+        for account in MenuBarAccount.shown(in: store.accounts, selection: menuBarAccountID) {
             guard case .loaded(let snap) = refresher.states[account.id] ?? .idle else {
                 continue
             }
@@ -68,6 +69,20 @@ struct MenuBarLabel: View {
         }()
         return Summary(fiveHour: best5, sevenDay: best7,
                        headlinePercent: pct, color: swiftColor, nsColor: nsColor)
+    }
+}
+
+/// The account the menu bar follows, stored as its UUID string. Empty, or
+/// an account that no longer exists, means every account.
+enum MenuBarAccount {
+    static let storageKey = "menuBarAccountID"
+
+    static func main(in accounts: [Account], selection: String) -> Account? {
+        accounts.first { $0.id.uuidString == selection }
+    }
+
+    static func shown(in accounts: [Account], selection: String) -> [Account] {
+        main(in: accounts, selection: selection).map { [$0] } ?? accounts
     }
 }
 

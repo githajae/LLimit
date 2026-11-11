@@ -462,6 +462,7 @@ private struct GeneralTab: View {
     @AppStorage("warnAtPercent") private var warnAtPercent: Double = 80
     @AppStorage("showResetTimes") private var showResetTimes: Bool = true
     @AppStorage("compactMenuBar") private var compactMenuBar: Bool = false
+    @AppStorage(MenuBarAccount.storageKey) private var menuBarAccountID: String = ""
     @State private var launchAtLogin: Bool = LaunchAtLogin.isEnabled
 
     var body: some View {
@@ -496,6 +497,16 @@ private struct GeneralTab: View {
             Section("Display") {
                 Toggle("Show reset times under each bar", isOn: $showResetTimes)
                 Toggle("Compact menu bar (icon only)", isOn: $compactMenuBar)
+                Picker("Menu bar shows", selection: Binding(
+                    get: { MenuBarAccount.main(in: store.accounts, selection: menuBarAccountID)?.id.uuidString ?? "" },
+                    set: { menuBarAccountID = $0 }
+                )) {
+                    Text("Most used of all accounts").tag("")
+                    Divider()
+                    ForEach(store.accounts) { account in
+                        Text(account.name).tag(account.id.uuidString)
+                    }
+                }
                 LabeledContent("Warn at") {
                     HStack {
                         Slider(value: $warnAtPercent, in: 50...95, step: 5)

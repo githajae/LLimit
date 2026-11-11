@@ -19,6 +19,7 @@ struct MenuContentView: View {
     @Environment(\.openSettings) private var openSettings
 
     @AppStorage("popoverMode") private var popoverMode: PopoverMode = .summary
+    @AppStorage(MenuBarAccount.storageKey) private var menuBarAccountID: String = ""
 
     enum PopoverMode: String, CaseIterable, Identifiable {
         case summary
@@ -51,16 +52,28 @@ struct MenuContentView: View {
                 ScrollView(.vertical) {
                 VStack(spacing: S(8)) {
                     ForEach(store.accounts) { account in
-                        if popoverMode == .summary {
-                            AccountRowSummary(
-                                account: account,
-                                state: refresher.states[account.id] ?? .idle
-                            )
-                        } else {
-                            AccountCardDetailed(
-                                account: account,
-                                state: refresher.states[account.id] ?? .idle
-                            )
+                        let isMain = MenuBarAccount.main(in: store.accounts, selection: menuBarAccountID)?.id == account.id
+                        Group {
+                            if popoverMode == .summary {
+                                AccountRowSummary(
+                                    account: account,
+                                    state: refresher.states[account.id] ?? .idle,
+                                    isMain: isMain
+                                )
+                            } else {
+                                AccountCardDetailed(
+                                    account: account,
+                                    state: refresher.states[account.id] ?? .idle,
+                                    isMain: isMain
+                                )
+                            }
+                        }
+                        .contextMenu {
+                            if isMain {
+                                Button("Show All Accounts in Menu Bar") { menuBarAccountID = "" }
+                            } else {
+                                Button("Show This Account in Menu Bar") { menuBarAccountID = account.id.uuidString }
+                            }
                         }
                     }
                 }
@@ -172,15 +185,19 @@ private struct MenuScreenReader: NSViewRepresentable {
 private struct AccountRowSummary: View {
     let account: Account
     let state: UsageState
+    var isMain = false
 
     var body: some View {
         HStack(spacing: S(10)) {
             providerBadge
 
             VStack(alignment: .leading, spacing: S(2)) {
-                Text(account.name)
-                    .font(.ll(11, .semibold))
-                    .lineLimit(1)
+                HStack(spacing: S(3)) {
+                    Text(account.name)
+                        .font(.ll(11, .semibold))
+                        .lineLimit(1)
+                    if isMain { MainAccountMark() }
+                }
                 if needsLoginToSeparate {
                     Text("sign in to separate accounts")
                         .font(.ll(10, .medium))
@@ -301,6 +318,17 @@ private struct AccountRowSummary: View {
     }
 }
 
+/// Marks the account the menu bar icon follows.
+private struct MainAccountMark: View {
+    var body: some View {
+        Image(systemName: "star.fill")
+            .font(.ll(8, .semibold))
+            .foregroundStyle(.yellow)
+            .help("Shown in the menu bar")
+            .accessibilityLabel("Shown in the menu bar")
+    }
+}
+
 private struct CompactResetCount: View {
     let credits: ResetCredits?
     var iconOnly = false
@@ -399,6 +427,7 @@ private struct MiniWindow: View {
 private struct AccountCardDetailed: View {
     let account: Account
     let state: UsageState
+    var isMain = false
     @Environment(\.resetColumnWidth) private var resetColumnWidth
 
     var body: some View {
@@ -406,8 +435,11 @@ private struct AccountCardDetailed: View {
             HStack(spacing: S(8)) {
                 ProviderBadge(provider: account.provider, size: S(22))
                 VStack(alignment: .leading, spacing: S(1)) {
-                    Text(account.name)
-                        .font(.ll(11, .semibold))
+                    HStack(spacing: S(3)) {
+                        Text(account.name)
+                            .font(.ll(11, .semibold))
+                        if isMain { MainAccountMark() }
+                    }
                     if needsLoginToSeparate {
                         Text("sign in to separate accounts")
                             .font(.ll(10, .medium))
