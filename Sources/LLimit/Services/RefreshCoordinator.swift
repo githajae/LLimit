@@ -81,7 +81,7 @@ final class RefreshCoordinator: ObservableObject {
         do {
             let snap = try await api(for: account).fetch(account: account)
             states[account.id] = .loaded(snap)
-            UsageNotifier.shared.evaluate(account: account, snapshot: snap)
+            UsageNotifier.shared.evaluate(account: account, accounts: store.accounts, snapshot: snap)
         } catch {
             // Transient API errors (rate limits, brief network drops) used
             // to immediately blank the popover. If we have a recent good

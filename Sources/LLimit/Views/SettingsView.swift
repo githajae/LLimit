@@ -497,16 +497,19 @@ private struct GeneralTab: View {
             Section("Display") {
                 Toggle("Show reset times under each bar", isOn: $showResetTimes)
                 Toggle("Compact menu bar (icon only)", isOn: $compactMenuBar)
-                Picker("Menu bar shows", selection: Binding(
+                Picker("Main account", selection: Binding(
                     get: { MenuBarAccount.main(in: store.accounts, selection: menuBarAccountID)?.id.uuidString ?? "" },
                     set: { menuBarAccountID = $0 }
                 )) {
-                    Text("Most used of all accounts").tag("")
+                    Text("All accounts").tag("")
                     Divider()
                     ForEach(store.accounts) { account in
                         Text(account.name).tag(account.id.uuidString)
                     }
                 }
+                Text("The menu bar icon and usage warnings follow the main account.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
                 LabeledContent("Warn at") {
                     HStack {
                         Slider(value: $warnAtPercent, in: 50...95, step: 5)

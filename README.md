@@ -140,9 +140,9 @@ Validation: `swift test` and `bash Scripts/test_security.sh`.
   name a scoped model are labelled after it, e.g. `3× Fable  Mar 9`.
 - Detailed cards stack every window vertically (Claude's weekly and Fable
   limits included), each with a ring showing how much of the window has elapsed.
-- Main account: the menu bar icon follows one account instead of the most
-  used of all. Pick it in Settings → General → "Menu bar shows", or right-click
-  an account in the popover; the chosen account is starred. The icon's two
+- Main account: the menu bar icon and usage warnings follow one account
+  instead of all of them. Pick it in Settings → General → "Main account", or
+  right-click an account in the popover; the chosen account is starred. The icon's two
   bars are the account's first two windows in popover order (Claude: weekly
   over Fable; Codex: 5h over 7d).
 - Usage log: every refresh appends one JSON line to

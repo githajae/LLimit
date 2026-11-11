@@ -62,8 +62,9 @@ struct MenuBarLabel: View {
     }
 }
 
-/// The account the menu bar follows, stored as its UUID string. Empty, or
-/// an account that no longer exists, means every account.
+/// The main account, which the menu bar and usage warnings follow, stored
+/// as its UUID string. Empty, or an account that no longer exists, means
+/// every account.
 enum MenuBarAccount {
     static let storageKey = "menuBarAccountID"
 

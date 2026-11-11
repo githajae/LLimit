@@ -70,9 +70,9 @@ struct MenuContentView: View {
                         }
                         .contextMenu {
                             if isMain {
-                                Button("Show All Accounts in Menu Bar") { menuBarAccountID = "" }
+                                Button("Use All Accounts") { menuBarAccountID = "" }
                             } else {
-                                Button("Show This Account in Menu Bar") { menuBarAccountID = account.id.uuidString }
+                                Button("Make Main Account") { menuBarAccountID = account.id.uuidString }
                             }
                         }
                     }
@@ -318,14 +318,14 @@ private struct AccountRowSummary: View {
     }
 }
 
-/// Marks the account the menu bar icon follows.
+/// Marks the main account, which the menu bar icon and warnings follow.
 private struct MainAccountMark: View {
     var body: some View {
         Image(systemName: "star.fill")
             .font(.ll(8, .semibold))
             .foregroundStyle(.yellow)
-            .help("Shown in the menu bar")
-            .accessibilityLabel("Shown in the menu bar")
+            .help("Main account: shown in the menu bar and warns")
+            .accessibilityLabel("Main account")
     }
 }
 

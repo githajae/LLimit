@@ -32,4 +32,15 @@ final class MenuBarAccountTests: XCTestCase {
         let single = MenuBarAccount.bars(for: [snapshot([("7d", 0.21)])])
         XCTAssertNil(single.bottom)
     }
+
+    func testOnlyMainAccountWarns() {
+        let main = Account(name: "Claude", provider: .claude, configDir: "/tmp/c")
+        let other = Account(name: "Work", provider: .claude, configDir: "/tmp/w")
+        let accounts = [main, other]
+
+        XCTAssertTrue(UsageNotifier.warns(for: main, accounts: accounts, selection: main.id.uuidString))
+        XCTAssertFalse(UsageNotifier.warns(for: other, accounts: accounts, selection: main.id.uuidString))
+        XCTAssertTrue(UsageNotifier.warns(for: other, accounts: accounts, selection: ""))
+        XCTAssertTrue(UsageNotifier.warns(for: other, accounts: accounts, selection: UUID().uuidString))
+    }
 }
