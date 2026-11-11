@@ -1,9 +1,11 @@
 import SwiftUI
 import AppKit
 
-/// The live status indicator in the system menu bar. Picks the most-loaded
-/// window of the main account (or of every account when none is chosen)
-/// and renders two stacked bars (5h / 7d) plus an optional percent label.
+/// The live status indicator in the system menu bar. Follows the main
+/// account (or every account when none is chosen) and renders two stacked
+/// bars plus an optional percent label. The bars are the account's first two
+/// windows in popover order: Weekly over Fable for Claude, 5h over 7d for
+/// Codex.
 ///
 /// On macOS 26, MenuBarExtra no longer renders complex SwiftUI view
 /// hierarchies (GeometryReader, ZStack, etc.) in its label. We work around
@@ -20,8 +22,8 @@ struct MenuBarLabel: View {
         let summary = highestLoad()
         HStack(spacing: 4) {
             Image(nsImage: BarsIconRenderer.render(
-                short: summary.fiveHour,
-                long: summary.sevenDay,
+                short: summary.top,
+                long: summary.bottom,
                 color: summary.nsColor
             ))
             if !compactMenuBar, let pct = summary.headlinePercent {
@@ -32,33 +34,21 @@ struct MenuBarLabel: View {
     }
 
     private struct Summary {
-        let fiveHour: Double?
-        let sevenDay: Double?
+        let top: Double?
+        let bottom: Double?
         let headlinePercent: Int?
         let color: Color
         let nsColor: NSColor
     }
 
     private func highestLoad() -> Summary {
-        var best5: Double? = nil
-        var best7: Double? = nil
-        var headline: Double? = nil
-
-        for account in MenuBarAccount.shown(in: store.accounts, selection: menuBarAccountID) {
-            guard case .loaded(let snap) = refresher.states[account.id] ?? .idle else {
-                continue
+        let snapshots = MenuBarAccount.shown(in: store.accounts, selection: menuBarAccountID)
+            .compactMap { account -> UsageSnapshot? in
+                guard case .loaded(let snap) = refresher.states[account.id] ?? .idle else { return nil }
+                return snap
             }
-            for w in snap.windows {
-                guard let p = w.usedPercent else { continue }
-                let label = w.label.lowercased()
-                if label.contains("5h") || label.contains("5-hour") {
-                    if best5 == nil || p > best5! { best5 = p }
-                } else if label.contains("7d") || label.contains("week") {
-                    if best7 == nil || p > best7! { best7 = p }
-                }
-                if headline == nil || p > headline! { headline = p }
-            }
-        }
+        let bars = MenuBarAccount.bars(for: snapshots)
+        let headline = bars.mostUsed
 
         let pct = headline.map { Int(((1 - $0) * 100).rounded()) }
         let (swiftColor, nsColor): (Color, NSColor) = {
@@ -67,7 +57,7 @@ struct MenuBarLabel: View {
             if h >= 0.7 { return (.orange, .systemOrange) }
             return (.primary, .labelColor)
         }()
-        return Summary(fiveHour: best5, sevenDay: best7,
+        return Summary(top: bars.top, bottom: bars.bottom,
                        headlinePercent: pct, color: swiftColor, nsColor: nsColor)
     }
 }
@@ -83,6 +73,22 @@ enum MenuBarAccount {
 
     static func shown(in accounts: [Account], selection: String) -> [Account] {
         main(in: accounts, selection: selection).map { [$0] } ?? accounts
+    }
+
+    /// Used fractions for the two menu bar bars, each the highest across
+    /// `snapshots`, plus the most used window of all. Per account the bars
+    /// are its first two windows in popover order.
+    static func bars(for snapshots: [UsageSnapshot]) -> (top: Double?, bottom: Double?, mostUsed: Double?) {
+        var top: [Double] = []
+        var bottom: [Double] = []
+        var all: [Double] = []
+        for snapshot in snapshots {
+            let windows = snapshot.windows
+            if let used = windows.first?.usedPercent { top.append(used) }
+            if windows.count > 1, let used = windows[1].usedPercent { bottom.append(used) }
+            all += windows.compactMap(\.usedPercent)
+        }
+        return (top.max(), bottom.max(), all.max())
     }
 }
 
