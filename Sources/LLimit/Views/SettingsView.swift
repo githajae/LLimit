@@ -51,6 +51,9 @@ enum LoginStatus: Equatable {
                 || (root["OPENAI_API_KEY"] as? String)?.isEmpty == false
             guard hasToken else { return .signedOut }
             return .signedIn(email: codexEmailFromIDToken(tokens))
+        case .grok:
+            guard let auth = try? GrokUsageAPI.loadAuth(home: account.configDir) else { return .signedOut }
+            return .signedIn(email: auth.email)
         }
     }
 
@@ -344,11 +347,20 @@ private struct EditForm: View {
                 .pickerStyle(.segmented)
                 .onChange(of: draft.provider) { _, p in
                     let home = FileManager.default.homeDirectoryForCurrentUser.path
-                    let base = home + (p == .claude ? "/.claude" : "/.codex")
-                    draft.configDir = p == .codex ? draft.authenticationDirectory : Self.uniqueDir(from: base, excluding: existingConfigDirs)
+                    switch p {
+                    case .claude:
+                        draft.configDir = Self.uniqueDir(from: home + "/.claude", excluding: existingConfigDirs)
+                    case .codex:
+                        draft.configDir = draft.authenticationDirectory
+                    case .grok:
+                        draft.configDir = GrokUsageAPI.defaultHome
+                    }
                 }
                 if draft.provider == .codex {
                     Text("Login is saved separately in LLimit. Switching accounts in Codex will not change this account.")
+                        .font(.callout).foregroundStyle(.secondary)
+                } else if draft.provider == .grok {
+                    Text("Uses the Grok CLI's sign-in in ~/.grok. Run `grok login` in Terminal to sign in or switch accounts.")
                         .font(.callout).foregroundStyle(.secondary)
                 } else {
                     HStack {
@@ -450,6 +462,7 @@ private struct GeneralTab: View {
     @AppStorage("warnAtPercent") private var warnAtPercent: Double = 80
     @AppStorage("showResetTimes") private var showResetTimes: Bool = true
     @AppStorage("compactMenuBar") private var compactMenuBar: Bool = false
+    @AppStorage(MenuBarAccount.storageKey) private var menuBarAccountID: String = ""
     @State private var launchAtLogin: Bool = LaunchAtLogin.isEnabled
 
     var body: some View {
@@ -484,6 +497,19 @@ private struct GeneralTab: View {
             Section("Display") {
                 Toggle("Show reset times under each bar", isOn: $showResetTimes)
                 Toggle("Compact menu bar (icon only)", isOn: $compactMenuBar)
+                Picker("Main account", selection: Binding(
+                    get: { MenuBarAccount.main(in: store.accounts, selection: menuBarAccountID)?.id.uuidString ?? "" },
+                    set: { menuBarAccountID = $0 }
+                )) {
+                    Text("All accounts").tag("")
+                    Divider()
+                    ForEach(store.accounts) { account in
+                        Text(account.name).tag(account.id.uuidString)
+                    }
+                }
+                Text("The menu bar icon and usage warnings follow the main account.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
                 LabeledContent("Warn at") {
                     HStack {
                         Slider(value: $warnAtPercent, in: 50...95, step: 5)

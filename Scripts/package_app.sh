@@ -129,4 +129,8 @@ fi
 echo
 echo "done."
 echo "  app: $APP_DIR"
-[ "$EMIT_ZIP" = "zip" ] && echo "  zip: $OUT_DIR/LLimit-${VERSION}.zip"
+# An `&&` list as the last command would make the script exit 1 under
+# `set -e` whenever no zip was requested.
+if [ "$EMIT_ZIP" = "zip" ]; then
+  echo "  zip: $OUT_DIR/LLimit-${VERSION}.zip"
+fi

@@ -166,6 +166,12 @@ final class AccountStore: ObservableObject {
             accounts.append(Account(name: "Codex (default)", provider: .codex, configDir: codexDir))
             save()
         }
+        let grokDir = GrokUsageAPI.defaultHome
+        let hasGrokAccount = accounts.contains { $0.provider == .grok }
+        if !hasGrokAccount && FileManager.default.fileExists(atPath: grokDir + "/auth.json") {
+            accounts.append(Account(name: "Grok (default)", provider: .grok, configDir: grokDir))
+            save()
+        }
     }
 
     private func seedDefaults() {

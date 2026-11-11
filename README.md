@@ -58,11 +58,15 @@ Scripts/package_app.sh 0.2.0 zip        # → build/release/LLimit-0.2.0.zip
 - **Live menu-bar icon** — two stacked progress bars (5-hour / weekly) plus an
   optional headline percent. Color escalates orange ≥70%, red ≥90%.
 - **Multiple accounts at once** — list view up to 3 accounts, automatic
-  2-column grid above that. Supports any mix of Claude and Codex configs.
+  2-column grid above that. Supports any mix of Claude, Codex and Grok configs.
 - **Real plan-relative percentages**
   - Claude: calls `https://api.anthropic.com/api/oauth/usage` with your
-    existing OAuth token (`5h`, `7d`, `7d opus`, `7d sonnet`).
+    existing OAuth token (`5h`, `7d`, and model-scoped weekly limits such as
+    Fable, Opus or Sonnet).
   - Codex: queries the live usage API with each LLimit account's private credentials.
+  - Grok: reads the Grok CLI's sign-in (`~/.grok/auth.json`) and calls the
+    billing endpoint behind its `/usage` command (weekly credit percentage,
+    split by product).
 - **Identity at a glance** — surfaces email + plan tier (`max plan`,
   `plus plan`, …) under each account name.
 - **Threshold notifications** — configurable warn-at percentage; one
@@ -126,3 +130,33 @@ cannot recover a previous identity. Imported OAuth sessions may still share serv
 revocation/refresh lifetime with the original session until signed in again in LLimit.
 
 Validation: `swift test` and `bash Scripts/test_security.sh`.
+
+## Fork changes (ytj0604/LLimit)
+
+- The summary row shows every Claude window side by side — `5h`, `7d` and each
+  model-scoped weekly limit such as `FABLE` — instead of collapsing the weekly
+  limits into whichever is most used.
+- Resets are grouped by kind and expiry in a compact column. Claude grants that
+  name a scoped model are labelled after it, e.g. `3× Fable  Mar 9`.
+- Detailed cards stack every window vertically (Claude's weekly and Fable
+  limits included), each with a ring showing how much of the window has elapsed.
+- Main account: the menu bar icon and usage warnings follow one account
+  instead of all of them. Pick it in Settings → General → "Main account", or
+  right-click an account in the popover; the chosen account is starred. The icon's two
+  bars are the account's first two windows in popover order (Claude: weekly
+  over Fable; Codex: 5h over 7d).
+- Usage log: every refresh appends one JSON line to
+  `~/Library/Application Support/LLimit/usage_log.jsonl` with the time and,
+  per account, each window's used percent and reset time, the available reset
+  count and any error. The file is never trimmed.
+- Dashboard (chart button in the popover footer) opens a window that stays
+  until closed. Per account it shows this weekly window's trend (Claude's
+  weekly and Fable limits overlaid, with an even-pace reference), usage per
+  day for the last 14 days, and usage per weekly window for the last 8.
+- Grok provider (see above). LLimit never rewrites the CLI's credential; when
+  the access token has expired it runs `grok models`, which makes the CLI
+  refresh its own sign-in.
+
+On a Mac with only the Command Line Tools for macOS 27, SwiftUI's `@State`
+macro plugin is missing; build against the 26.5 SDK instead:
+`SDKROOT=/Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk Scripts/package_app.sh <version>`.

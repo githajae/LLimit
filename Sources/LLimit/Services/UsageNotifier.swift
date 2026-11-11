@@ -5,7 +5,8 @@ import SwiftUI
 /// Fires a local notification the first time a usage window crosses the
 /// user-configured threshold within a single reset cycle. The "cycle" is
 /// keyed by `(accountId, windowLabel, resetsAt)` so a fresh notification
-/// arrives after every reset, not on every poll.
+/// arrives after every reset, not on every poll. When a main account is
+/// chosen, only that account warns.
 @MainActor
 final class UsageNotifier: ObservableObject {
     static let shared = UsageNotifier()
@@ -30,8 +31,10 @@ final class UsageNotifier: ObservableObject {
 
     /// Inspect a freshly loaded snapshot and post one notification per
     /// window that newly crossed the threshold this cycle.
-    func evaluate(account: Account, snapshot: UsageSnapshot) {
+    func evaluate(account: Account, accounts: [Account], snapshot: UsageSnapshot) {
         guard Self.isBundled else { return }
+        let selection = UserDefaults.standard.string(forKey: MenuBarAccount.storageKey) ?? ""
+        guard Self.warns(for: account, accounts: accounts, selection: selection) else { return }
         let threshold = UserDefaults.standard.double(forKey: "warnAtPercent")
         let pct = threshold > 0 ? threshold : 80
         let limit = pct / 100.0
@@ -44,6 +47,10 @@ final class UsageNotifier: ObservableObject {
             notified.insert(key)
             post(account: account, window: w, percent: p)
         }
+    }
+
+    nonisolated static func warns(for account: Account, accounts: [Account], selection: String) -> Bool {
+        MenuBarAccount.shown(in: accounts, selection: selection).contains { $0.id == account.id }
     }
 
     private func post(account: Account, window: UsageWindow, percent: Double) {

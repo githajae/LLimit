@@ -46,12 +46,18 @@ final class RefreshCoordinator: ObservableObject {
 
     func refreshAll() async {
         let accounts = store.accounts
+        let startedAt = Date()
         await withTaskGroup(of: Void.self) { group in
             for account in accounts {
                 group.addTask { @MainActor in await self.refresh(account) }
             }
         }
-        lastRefreshedAt = Date()
+        let finishedAt = Date()
+        lastRefreshedAt = finishedAt
+        if let record = UsageLog.record(time: finishedAt, refreshStartedAt: startedAt,
+                                        accounts: accounts, states: states) {
+            UsageLog.shared.append(record)
+        }
     }
 
     func forget(_ id: UUID) {
@@ -75,7 +81,7 @@ final class RefreshCoordinator: ObservableObject {
         do {
             let snap = try await api(for: account).fetch(account: account)
             states[account.id] = .loaded(snap)
-            UsageNotifier.shared.evaluate(account: account, snapshot: snap)
+            UsageNotifier.shared.evaluate(account: account, accounts: store.accounts, snapshot: snap)
         } catch {
             // Transient API errors (rate limits, brief network drops) used
             // to immediately blank the popover. If we have a recent good
@@ -94,6 +100,7 @@ final class RefreshCoordinator: ObservableObject {
         switch account.provider {
         case .claude: return AnthropicUsageAPI()
         case .codex:  return OpenAIUsageAPI()
+        case .grok:   return GrokUsageAPI()
         }
     }
 }
